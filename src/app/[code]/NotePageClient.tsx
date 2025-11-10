@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, FormEvent, useEffect } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { Spinner } from '@/components/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PasswordDialog } from '@/components/PasswordDialog';
@@ -170,9 +172,12 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between gap-4">
             {/* Left: Branding */}
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Kloud Notes
-            </h1>
+            <Link href="/" className="flex items-center gap-3 group">
+              <Image src="/kloudnotes-logo-trans.png" alt="Kloud Notes Logo" width={32} height={32} className="dark:invert-0 invert group-hover:opacity-80 transition" />
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white group-hover:text-gray-700 dark:group-hover:text-gray-300 transition">
+                Kloud Notes
+              </h1>
+            </Link>
 
             {/* Right: New Note, Protect with Password button, Copy Link, Lock icon, Theme Toggle */}
             <div className="flex items-center gap-2">

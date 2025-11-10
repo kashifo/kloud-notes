@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, FormEvent, useEffect, useCallback, useRef } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { Spinner } from '@/components/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PasswordDialog } from '@/components/PasswordDialog';
@@ -313,9 +315,12 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between gap-4">
             {/* Left: Branding */}
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Kloud Notes
-            </h1>
+            <Link href="/" className="flex items-center gap-3 group">
+              <Image src="/kloudnotes-logo-trans.png" alt="Kloud Notes Logo" width={32} height={32} className="dark:invert-0 invert group-hover:opacity-80 transition" />
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white group-hover:text-gray-700 dark:group-hover:text-gray-300 transition">
+                Kloud Notes
+              </h1>
+            </Link>
 
             {/* Right: New Note, Protect with Password button, Copy Link, Lock icon, Theme Toggle */}
             <div className="flex items-center gap-2">
@@ -361,46 +366,46 @@ export default function Home() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-hidden">
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 overflow-hidden">
-            {/* Custom Link Input - All 4 elements in one row, fit-width, right-aligned */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-end">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                Create your custom link
-              </label>
-              <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                {appUrl}/
-              </span>
-              <div className="relative w-full sm:w-48">
-                <input
-                  type="text"
-                  value={customCode}
-                  onChange={(e) => handleCustomCodeChange(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition"
-                  placeholder="type here"
-                  disabled={isLoading || !!noteCode}
-                />
-                {isCheckingCode && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Spinner size="sm" />
-                  </div>
-                )}
-                {!isCheckingCode && codeAvailable === true && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-                    ✓
-                  </div>
-                )}
-                {!isCheckingCode && codeAvailable === false && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
-                    ✗
-                  </div>
-                )}
+            {/* Custom Link Input */}
+            <div className="flex flex-col items-stretch sm:items-end gap-2">
+              
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                  {appUrl}/
+                </span>
+                <div className="relative flex-1 min-w-[120px] sm:flex-none sm:w-48">
+                  <input
+                    type="text"
+                    value={customCode}
+                    onChange={(e) => handleCustomCodeChange(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition"
+                    placeholder="type here"
+                    disabled={isLoading || !!noteCode}
+                  />
+                  {isCheckingCode && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Spinner size="sm" />
+                    </div>
+                  )}
+                  {!isCheckingCode && codeAvailable === true && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
+                      ✓
+                    </div>
+                  )}
+                  {!isCheckingCode && codeAvailable === false && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
+                      ✗
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading || !content.trim()}
+                  className="px-10 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center shadow-lg shadow-blue-500/30 dark:shadow-blue-500/20 whitespace-nowrap"
+                >
+                  {isLoading ? <Spinner size="sm" /> : noteCode ? 'Update' : 'Save'}
+                </button>
               </div>
-              <button
-                type="submit"
-                disabled={isLoading || !content.trim()}
-                className="px-10 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center shadow-lg shadow-blue-500/30 dark:shadow-blue-500/20 whitespace-nowrap"
-              >
-                {isLoading ? <Spinner size="sm" /> : noteCode ? 'Update' : 'Save'}
-              </button>
             </div>
 
             {/* Editor */}
