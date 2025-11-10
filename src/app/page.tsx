@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent, useEffect, useCallback } from 'react';
+import { useState, FormEvent, useEffect, useCallback, useRef } from 'react';
 import { Spinner } from '@/components/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PasswordDialog } from '@/components/PasswordDialog';
@@ -28,9 +28,61 @@ export default function Home() {
   const [noteCode, setNoteCode] = useState<string | null>(null);
   const [isLoadingNote, setIsLoadingNote] = useState(false);
 
+  // Code availability checking
+  const [isCheckingCode, setIsCheckingCode] = useState(false);
+  const [codeAvailable, setCodeAvailable] = useState<boolean | null>(null);
+  const checkTimeout = useRef<NodeJS.Timeout | null>(null);
+
   const appUrl = typeof window !== 'undefined' ? window.location.origin : APP_URL;
 
-  // Check if we're on a note page
+  // Generate a unique short code
+  const generateUniqueCode = useCallback(async () => {
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    while (attempts < maxAttempts) {
+      // Generate a random 8-character code
+      const code = Math.random().toString(36).substring(2, 10);
+
+      try {
+        const response = await fetch(`/api/check/${code}`);
+        const data = await response.json();
+
+        if (data.available) {
+          return code;
+        }
+      } catch (err) {
+        console.error('Error checking code availability:', err);
+      }
+
+      attempts++;
+    }
+
+    // Fallback to timestamp-based code if all attempts fail
+    return Date.now().toString(36);
+  }, []);
+
+  // Check if code is available
+  const checkCodeAvailability = useCallback(async (code: string) => {
+    if (!code || code.length < 3) {
+      setCodeAvailable(null);
+      return;
+    }
+
+    setIsCheckingCode(true);
+    try {
+      const response = await fetch(`/api/check/${code}`);
+      const data = await response.json();
+      setCodeAvailable(data.available);
+    } catch (err) {
+      console.error('Error checking code availability:', err);
+      setCodeAvailable(null);
+    } finally {
+      setIsCheckingCode(false);
+    }
+  }, []);
+
+  // Check if we're on a note page or generate a new code
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
@@ -39,6 +91,12 @@ export default function Home() {
         setNoteCode(code);
         setCustomCode(code);
         loadNote(code);
+      } else {
+        // Auto-generate a code for new notes
+        generateUniqueCode().then((generatedCode) => {
+          setCustomCode(generatedCode);
+          setCodeAvailable(true);
+        });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,6 +271,31 @@ export default function Home() {
     }
   };
 
+  const handlePasswordRemove = async () => {
+    setPassword('');
+    setHasPassword(false);
+    setShowPasswordDialog(false);
+  };
+
+  const handleCustomCodeChange = (value: string) => {
+    const sanitized = value.replace(/[^a-zA-Z0-9_-]/g, '');
+    setCustomCode(sanitized);
+
+    // Clear previous timeout
+    if (checkTimeout.current) {
+      clearTimeout(checkTimeout.current);
+    }
+
+    // Debounce the availability check
+    if (sanitized && sanitized.length >= 3 && !noteCode) {
+      checkTimeout.current = setTimeout(() => {
+        checkCodeAvailability(sanitized);
+      }, 500); // Check after 500ms of no typing
+    } else {
+      setCodeAvailable(null);
+    }
+  };
+
   const charCount = content.length;
 
   if (isLoadingNote) {
@@ -234,8 +317,14 @@ export default function Home() {
               Kloud Notes
             </h1>
 
-            {/* Right: Lock icon, Copy Link, Theme Toggle */}
+            {/* Right: Protect with Password button, Copy Link, Lock icon, Theme Toggle */}
             <div className="flex items-center gap-2">
+              <button
+                onClick={handlePasswordToggle}
+                className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
+              >
+                {hasPassword || password ? '🔒 Password Protected' : '🔓 Protect with Password'}
+              </button>
               {(noteCode || customCode) && (
                 <button
                   onClick={handleCopyLink}
@@ -246,7 +335,7 @@ export default function Home() {
               )}
               <button
                 onClick={handlePasswordToggle}
-                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition relative"
+                className="sm:hidden p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition relative"
                 aria-label="Password protection"
               >
                 <span className="text-xl">{hasPassword || password ? '🔒' : '🔓'}</span>
@@ -264,32 +353,49 @@ export default function Home() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-hidden">
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 overflow-hidden">
-            {/* Custom Link Input */}
-            <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Create your custom link
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                    {appUrl}/
-                  </span>
-                  <input
-                    type="text"
-                    value={customCode}
-                    onChange={(e) => setCustomCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition"
-                    placeholder="type here"
-                    disabled={isLoading || !!noteCode}
-                  />
-                </div>
+            {/* Custom Link Input - All 4 elements in one row, fit-width, right-aligned */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-end">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                Create your custom link
+              </label>
+              <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                {appUrl}/
+              </span>
+              <div className="relative w-full sm:w-48">
+                <input
+                  type="text"
+                  value={customCode}
+                  onChange={(e) => handleCustomCodeChange(e.target.value)}
+                  className={`w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition ${
+                    codeAvailable === false
+                      ? 'border-red-500 dark:border-red-500'
+                      : codeAvailable === true
+                      ? 'border-green-500 dark:border-green-500'
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                  placeholder="type here"
+                  disabled={isLoading || !!noteCode}
+                />
+                {isCheckingCode && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Spinner size="sm" />
+                  </div>
+                )}
+                {!isCheckingCode && codeAvailable === true && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
+                    ✓
+                  </div>
+                )}
+                {!isCheckingCode && codeAvailable === false && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
+                    ✗
+                  </div>
+                )}
               </div>
-
-              {/* Save Button */}
               <button
                 type="submit"
                 disabled={isLoading || !content.trim()}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center shadow-lg shadow-blue-500/30 dark:shadow-blue-500/20 whitespace-nowrap"
+                className="px-10 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center shadow-lg shadow-blue-500/30 dark:shadow-blue-500/20 whitespace-nowrap"
               >
                 {isLoading ? <Spinner size="sm" /> : noteCode ? 'Update' : 'Save'}
               </button>
@@ -331,9 +437,12 @@ export default function Home() {
       {showPasswordDialog && (
         <PasswordDialog
           onSubmit={handlePasswordDialogSubmit}
+          onRemove={handlePasswordRemove}
+          onClose={() => setShowPasswordDialog(false)}
           error={passwordError || undefined}
           isLoading={isVerifying}
           mode={noteCode && hasPassword ? 'verify' : 'set'}
+          hasExistingPassword={hasPassword || !!password}
         />
       )}
 

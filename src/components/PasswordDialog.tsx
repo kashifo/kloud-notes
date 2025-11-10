@@ -4,18 +4,42 @@
 
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { Spinner } from './Spinner';
 
 interface PasswordDialogProps {
   onSubmit: (password: string) => Promise<void>;
+  onRemove?: () => Promise<void>;
+  onClose?: () => void;
   error?: string;
   isLoading?: boolean;
   mode?: 'set' | 'verify';
+  hasExistingPassword?: boolean;
 }
 
-export function PasswordDialog({ onSubmit, error, isLoading = false, mode = 'verify' }: PasswordDialogProps) {
+export function PasswordDialog({
+  onSubmit,
+  onRemove,
+  onClose,
+  error,
+  isLoading = false,
+  mode = 'verify',
+  hasExistingPassword = false
+}: PasswordDialogProps) {
   const [password, setPassword] = useState('');
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  // Handle ESC key to close dialog
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onClose && mode === 'set') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose, mode]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -27,11 +51,32 @@ export function PasswordDialog({ onSubmit, error, isLoading = false, mode = 'ver
     }
   };
 
+  const handleRemove = async () => {
+    if (onRemove) {
+      setIsRemoving(true);
+      await onRemove();
+      setIsRemoving(false);
+    }
+  };
+
   const isVerifyMode = mode === 'verify';
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700 relative">
+        {/* Close button - only show in set mode */}
+        {!isVerifyMode && onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+            aria-label="Close dialog"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+
         <div className="text-center mb-6">
           <div className="text-5xl mb-3">{isVerifyMode ? '🔒' : '🔐'}</div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
@@ -74,6 +119,18 @@ export function PasswordDialog({ onSubmit, error, isLoading = false, mode = 'ver
           >
             {isLoading ? <Spinner size="sm" /> : isVerifyMode ? 'Unlock Note' : 'Set Password'}
           </button>
+
+          {/* Remove Password button - only show in set mode when password exists */}
+          {!isVerifyMode && hasExistingPassword && onRemove && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={isRemoving}
+              className="w-full bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center"
+            >
+              {isRemoving ? <Spinner size="sm" /> : 'Remove Password'}
+            </button>
+          )}
         </form>
       </div>
     </div>
