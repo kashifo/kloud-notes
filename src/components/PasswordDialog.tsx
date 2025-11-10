@@ -1,5 +1,5 @@
 /**
- * Password dialog component for unlocking password-protected notes
+ * Password dialog component for setting/verifying password
  */
 
 'use client';
@@ -11,28 +11,36 @@ interface PasswordDialogProps {
   onSubmit: (password: string) => Promise<void>;
   error?: string;
   isLoading?: boolean;
+  mode?: 'set' | 'verify';
 }
 
-export function PasswordDialog({ onSubmit, error, isLoading = false }: PasswordDialogProps) {
+export function PasswordDialog({ onSubmit, error, isLoading = false, mode = 'verify' }: PasswordDialogProps) {
   const [password, setPassword] = useState('');
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (password.trim()) {
       await onSubmit(password);
+      if (mode === 'set') {
+        setPassword('');
+      }
     }
   };
+
+  const isVerifyMode = mode === 'verify';
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
         <div className="text-center mb-6">
-          <div className="text-5xl mb-3">🔒</div>
+          <div className="text-5xl mb-3">{isVerifyMode ? '🔒' : '🔐'}</div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Password Protected
+            {isVerifyMode ? 'Password Protected' : 'Set Password'}
           </h2>
           <p className="text-gray-600 dark:text-gray-400 text-sm">
-            This note is password protected. Please enter the password to view it.
+            {isVerifyMode
+              ? 'This note is password protected. Please enter the password to view it.'
+              : 'Enter a password to protect your note. Anyone with the link will need this password to view it.'}
           </p>
         </div>
 
@@ -47,7 +55,7 @@ export function PasswordDialog({ onSubmit, error, isLoading = false }: PasswordD
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition"
-              placeholder="Enter password"
+              placeholder={isVerifyMode ? "Enter password" : "Enter a password"}
               disabled={isLoading}
               autoFocus
             />
@@ -64,7 +72,7 @@ export function PasswordDialog({ onSubmit, error, isLoading = false }: PasswordD
             disabled={isLoading || !password.trim()}
             className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white py-3 px-4 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center shadow-lg shadow-blue-500/30 dark:shadow-blue-500/20"
           >
-            {isLoading ? <Spinner size="sm" /> : 'Unlock Note'}
+            {isLoading ? <Spinner size="sm" /> : isVerifyMode ? 'Unlock Note' : 'Set Password'}
           </button>
         </form>
       </div>
