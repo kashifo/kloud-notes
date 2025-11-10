@@ -317,8 +317,16 @@ export default function Home() {
               Kloud Notes
             </h1>
 
-            {/* Right: Protect with Password button, Copy Link, Lock icon, Theme Toggle */}
+            {/* Right: New Note, Protect with Password button, Copy Link, Lock icon, Theme Toggle */}
             <div className="flex items-center gap-2">
+              {noteCode && (
+                <button
+                  onClick={() => window.location.href = '/'}
+                  className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
+                >
+                  📝 New Note
+                </button>
+              )}
               <button
                 onClick={handlePasswordToggle}
                 className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
@@ -366,13 +374,7 @@ export default function Home() {
                   type="text"
                   value={customCode}
                   onChange={(e) => handleCustomCodeChange(e.target.value)}
-                  className={`w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition ${
-                    codeAvailable === false
-                      ? 'border-red-500 dark:border-red-500'
-                      : codeAvailable === true
-                      ? 'border-green-500 dark:border-green-500'
-                      : 'border-gray-300 dark:border-gray-600'
-                  }`}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition"
                   placeholder="type here"
                   disabled={isLoading || !!noteCode}
                 />
