@@ -55,8 +55,29 @@ export const fetchNoteSchema = z.object({
 });
 
 /**
+ * Schema for updating a note
+ */
+export const updateNoteSchema = z.object({
+  content: z
+    .string()
+    .min(1, 'Note content cannot be empty')
+    .max(NOTE.MAX_SIZE_CHARS, `Note content cannot exceed ${NOTE.MAX_SIZE_CHARS} characters`)
+    .refine((content) => {
+      const byteSize = new Blob([content]).size;
+      return byteSize <= NOTE.MAX_SIZE_BYTES;
+    }, `Note size cannot exceed ${NOTE.MAX_SIZE_BYTES / 1024} KB`),
+
+  password: z
+    .string()
+    .min(PASSWORD.MIN_LENGTH, `Password must be at least ${PASSWORD.MIN_LENGTH} characters`)
+    .max(PASSWORD.MAX_LENGTH, `Password cannot exceed ${PASSWORD.MAX_LENGTH} characters`)
+    .optional(),
+});
+
+/**
  * Type exports for use in API routes
  */
 export type CreateNoteInput = z.infer<typeof createNoteSchema>;
 export type VerifyPasswordInput = z.infer<typeof verifyPasswordSchema>;
 export type FetchNoteInput = z.infer<typeof fetchNoteSchema>;
+export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;

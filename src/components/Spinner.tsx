@@ -12,7 +12,7 @@ export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   return (
     <div className="flex items-center justify-center">
       <div
-        className={`${sizeClasses[size]} animate-spin rounded-full border-gray-300 border-t-blue-600`}
+        className={`${sizeClasses[size]} animate-spin rounded-full border-gray-300 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400`}
         role="status"
         aria-label="Loading"
       >
