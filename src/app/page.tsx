@@ -97,8 +97,8 @@ export default function Home() {
   // UI state
   const [showCustomLinkRow, setShowCustomLinkRow] = useState(false);
   const [showRecents, setShowRecents] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [newCode, setNewCode] = useState('');
+  const [isNewNote, setIsNewNote] = useState(true); // Track if this is a new note created in this session
+  const [recentsCount, setRecentsCount] = useState(0);
 
   // Code availability checking
   const [isCheckingCode, setIsCheckingCode] = useState(false);
@@ -152,6 +152,22 @@ export default function Home() {
     }
   }, []);
 
+  // Update recents count
+  const updateRecentsCount = useCallback(() => {
+    try {
+      const savedRecents = localStorage.getItem('kloud_notes_recents');
+      if (savedRecents) {
+        const recents: { url: string; timestamp: number }[] = JSON.parse(savedRecents);
+        setRecentsCount(recents.length);
+      } else {
+        setRecentsCount(0);
+      }
+    } catch (e) {
+      console.error('Failed to read recents count', e);
+      setRecentsCount(0);
+    }
+  }, []);
+
   // Save to recents
   const saveToRecents = useCallback((url: string) => {
     try {
@@ -168,10 +184,11 @@ export default function Home() {
       recents = recents.slice(0, 10);
 
       localStorage.setItem('kloud_notes_recents', JSON.stringify(recents));
+      updateRecentsCount();
     } catch (e) {
       console.error('Failed to save to recents', e);
     }
-  }, []);
+  }, [updateRecentsCount]);
 
   // Load note
   const loadNote = useCallback(async (code: string) => {
@@ -242,13 +259,20 @@ export default function Home() {
   // Initialize - check if we're on a note page
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Update recents count on mount
+      updateRecentsCount();
+
       const path = window.location.pathname;
       const code = path.substring(1);
       if (code && code !== '') {
+        // Loading an existing note from URL
         setNoteCode(code);
         setCustomCode(code);
+        setIsNewNote(false); // This is an existing note, not a new one
         loadNote(code);
       } else {
+        // Creating a new note
+        setIsNewNote(true);
         // Auto-generate a code for new notes
         generateUniqueCode().then((generatedCode) => {
           setCustomCode(generatedCode);
@@ -427,10 +451,13 @@ export default function Home() {
     setShowPasswordDialog(false);
   };
 
-  // Handle custom code change
+  // Handle custom code change (only for new notes before they're saved)
   const handleCustomCodeChange = (value: string) => {
+    // Only allow changes for new notes that haven't been saved yet
+    if (noteCode) return;
+
     const sanitized = value.replace(/[^a-zA-Z0-9_-]/g, '');
-    setNewCode(sanitized);
+    setCustomCode(sanitized);
 
     if (checkTimeout.current) {
       clearTimeout(checkTimeout.current);
@@ -442,46 +469,6 @@ export default function Home() {
       }, 500);
     } else {
       setCodeAvailable(null);
-    }
-  };
-
-  // Handle rename link
-  const handleRenameLink = async () => {
-    if (!newCode || newCode === customCode || codeAvailable !== true) return;
-
-    try {
-      setIsRenaming(true);
-      // For now, this would require a new API endpoint to rename
-      // We'll create a new note with the new code and same content
-      const response = await fetch('/api/notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: content.trim(),
-          password: password || undefined,
-          customCode: newCode,
-        }),
-      });
-
-      const data: CreateNoteResponse | ErrorResponse = await response.json();
-
-      if (!response.ok) {
-        throw new Error('error' in data ? data.error : 'Failed to rename note');
-      }
-
-      if ('url' in data) {
-        setNoteCode(data.shortCode);
-        setCustomCode(data.shortCode);
-        window.history.pushState({}, '', `/${data.shortCode}`);
-        saveToRecents(data.url);
-        setShowCustomLinkRow(false);
-        setIsRenaming(false);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename link');
-      setIsRenaming(false);
     }
   };
 
@@ -499,16 +486,16 @@ export default function Home() {
 
   if (isLoadingNote) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <Spinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <header className="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+      <header className="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between gap-4">
             {/* Left: Branding */}
@@ -532,7 +519,7 @@ export default function Home() {
                 </button>
               )}
 
-              {noteCode && (
+              {recentsCount > 1 && (
                 <div className="relative">
                   <button
                     onClick={() => setShowRecents(!showRecents)}
@@ -585,65 +572,49 @@ export default function Home() {
           <div className="flex-1 flex flex-col gap-4 overflow-hidden">
             {/* Custom Link Row - Hidden by default, shown on Get Link click */}
             {showCustomLinkRow && (
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                 <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
                   {appUrl}/
                 </span>
                 <div className="relative flex-1 sm:flex-none sm:w-64">
                   <input
                     type="text"
-                    value={isRenaming ? newCode : customCode}
+                    value={customCode}
                     onChange={(e) => handleCustomCodeChange(e.target.value)}
-                    className={`w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition ${
-                      codeAvailable === false
+                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition text-sm ${
+                      !noteCode && codeAvailable === false
                         ? 'border-red-500 dark:border-red-500'
-                        : codeAvailable === true
+                        : !noteCode && codeAvailable === true
                         ? 'border-green-500 dark:border-green-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
-                    placeholder="Enter custom code"
-                    readOnly={!isRenaming}
-                    onFocus={() => {
-                      if (noteCode && localStorage.getItem(`note_${noteCode}`) === 'owner') {
-                        setIsRenaming(true);
-                        setNewCode(customCode);
-                      }
-                    }}
+                    placeholder="custom-link"
+                    readOnly={!!noteCode}
                   />
                   {isCheckingCode && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
                       <Spinner size="sm" />
                     </div>
                   )}
-                  {!isCheckingCode && codeAvailable === true && (
+                  {!noteCode && !isCheckingCode && codeAvailable === true && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 font-bold">
                       ✓
                     </div>
                   )}
-                  {!isCheckingCode && codeAvailable === false && (
+                  {!noteCode && !isCheckingCode && codeAvailable === false && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold">
                       ✗
                     </div>
                   )}
                 </div>
 
-                {isRenaming && codeAvailable === true ? (
-                  <button
-                    onClick={handleRenameLink}
-                    className="px-6 py-2 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-lg font-medium transition flex items-center justify-center gap-2 whitespace-nowrap"
-                  >
-                    <span>🔗</span>
-                    <span>Rename Link</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleCopyLink}
-                    className="px-6 py-2 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-lg font-medium transition flex items-center justify-center gap-2 whitespace-nowrap"
-                  >
-                    <span>🔗</span>
-                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                  </button>
-                )}
+                <button
+                  onClick={handleCopyLink}
+                  className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-gray-100 dark:bg-gray-800 text-green-600 dark:text-green-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium whitespace-nowrap"
+                >
+                  <span>🔗</span>
+                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                </button>
               </div>
             )}
 
@@ -692,7 +663,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gray-200 dark:border-gray-800 py-4 text-center bg-white dark:bg-gray-900">
+      <footer className="border-t border-gray-200 dark:border-gray-800 py-4 text-center bg-gray-100 dark:bg-gray-900">
         <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 px-4">
           <span className="block sm:inline">Create notes from anywhere</span>
           <span className="hidden sm:inline mx-2">•</span>
