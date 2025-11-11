@@ -34,16 +34,16 @@ export const PASSWORD = {
  */
 export const RATE_LIMIT = {
   CREATE_NOTE: {
-    requests: 5,
-    window: '1m' as const, // 5 requests per minute
+    requests: 120,
+    window: '1m' as const, // 120 requests per minute (allows fast auto-save)
   },
   VERIFY_PASSWORD: {
     requests: 10,
     window: '1m' as const, // 10 requests per minute
   },
   FETCH_NOTE: {
-    requests: 30,
-    window: '1m' as const, // 30 requests per minute
+    requests: 60,
+    window: '1m' as const, // 60 requests per minute
   },
 } as const;
 

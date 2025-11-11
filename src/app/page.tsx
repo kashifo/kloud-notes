@@ -264,69 +264,43 @@ export default function Home() {
     try {
       setIsSaving(true);
 
+      // Regular auto-save (PATCH existing note)
+      const body: { content: string; password?: string; newShortCode?: string } = {
+        content: content.trim(),
+      };
+
+      if (password) {
+        body.password = password;
+      }
+
       // Check if custom code has changed and this is a new note created in this session
       if (isNewNote && customCode !== noteCode && codeAvailable === true) {
-        // Create a new note with the new custom code
-        const response = await fetch('/api/notes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: content.trim(),
-            password: password || undefined,
-            customCode: customCode,
-          }),
-        });
+        body.newShortCode = customCode;
+      }
 
-        const data: CreateNoteResponse | ErrorResponse = await response.json();
+      const response = await fetch(`/api/notes/${noteCode}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-        if (!response.ok) {
-          throw new Error('error' in data ? data.error : 'Failed to update note link');
-        }
+      const data: PublicNote | ErrorResponse = await response.json();
 
-        if ('url' in data) {
-          // Update state with new code
-          localStorage.setItem(`note_${data.shortCode}`, 'owner');
-          setNoteCode(data.shortCode);
+      if (!response.ok) {
+        throw new Error('error' in data ? data.error : 'Failed to save note');
+      }
 
-          // Update URL without reload
-          window.history.pushState({}, '', `/${data.shortCode}`);
+      if ('content' in data) {
+        setNoteData(data);
+        setShowSaved(true);
 
-          // Save to recents
-          saveToRecents(data.url);
-
-          setShowSaved(true);
-
-          // Fetch the full note data
-          const noteResponse = await fetch(`/api/notes/${data.shortCode}`);
-          const noteData: PublicNote | ErrorResponse = await noteResponse.json();
-          if ('content' in noteData) {
-            setNoteData(noteData);
-          }
-        }
-      } else {
-        // Regular auto-save (PATCH existing note)
-        const response = await fetch(`/api/notes/${noteCode}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: content.trim(),
-            password: password || undefined,
-          }),
-        });
-
-        const data: PublicNote | ErrorResponse = await response.json();
-
-        if (!response.ok) {
-          throw new Error('error' in data ? data.error : 'Failed to save note');
-        }
-
-        if ('content' in data) {
-          setNoteData(data);
-          setShowSaved(true);
+        // If short code was updated, update the URL and state
+        if (body.newShortCode && data.short_code !== noteCode) {
+          setNoteCode(data.short_code);
+          window.history.pushState({}, '', `/${data.short_code}`);
+          saveToRecents(`${appUrl}/${data.short_code}`);
         }
       }
     } catch (err) {
@@ -334,7 +308,7 @@ export default function Home() {
     } finally {
       setIsSaving(false);
     }
-  }, [content, noteCode, password, isNewNote, customCode, codeAvailable, saveToRecents]);
+  }, [content, noteCode, password, isNewNote, customCode, codeAvailable, saveToRecents, appUrl]);
 
   // Initialize - check if we're on a note page
   useEffect(() => {
@@ -376,7 +350,7 @@ export default function Home() {
     if (noteCode && content.trim() && !isInitialLoad) {
       autoSaveTimeout.current = setTimeout(() => {
         autoSave();
-      }, 2000); // Auto-save after 2 seconds of no typing
+      }, 300); // Auto-save after 300ms of no typing (immediate feedback)
     }
 
     return () => {
@@ -429,8 +403,9 @@ export default function Home() {
   };
 
   // Create new note (first save)
-  const createNote = async () => {
-    if (!content.trim()) {
+  const createNote = async (noteContent?: string) => {
+    const contentToSave = noteContent !== undefined ? noteContent : content;
+    if (!contentToSave.trim()) {
       setError('Please enter some content for your note');
       return;
     }
@@ -445,7 +420,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: content.trim(),
+          content: contentToSave.trim(),
           password: password || undefined,
           customCode: customCode || undefined,
         }),
@@ -490,7 +465,8 @@ export default function Home() {
 
   // Handle content change
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
+    const newValue = e.target.value;
+    setContent(newValue);
 
     // Mark initial load as complete when user types
     if (isInitialLoad) {
@@ -498,9 +474,9 @@ export default function Home() {
     }
 
     // Trigger auto-save for existing notes (handled by useEffect)
-    // For new notes, save on first keystroke
-    if (!noteCode && e.target.value.trim() && !isSaving) {
-      createNote();
+    // For new notes, save on first keystroke/paste
+    if (!noteCode && newValue.trim() && !isSaving) {
+      createNote(newValue);
     }
   };
 
@@ -714,9 +690,23 @@ export default function Home() {
 
                 <button
                   onClick={handleCopyLink}
-                  className="px-4 py-2 text-sm text-green-600 dark:text-green-400 font-medium"
+                  className="px-4 py-2 text-sm text-green-600 dark:text-green-400 font-medium flex items-center gap-2"
                 >
-                  🔗 {copied ? 'Copied!' : 'Copy Link'}
+                  {copied ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy Link
+                    </>
+                  )}
                 </button>
               </div>
             )}

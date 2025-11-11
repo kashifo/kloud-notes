@@ -36,6 +36,15 @@ export interface CreateNoteRequest {
 }
 
 /**
+ * Request body for updating a note
+ */
+export interface UpdateNoteRequest {
+  content?: string;
+  password?: string;
+  newShortCode?: string;
+}
+
+/**
  * Response after creating a note
  */
 export interface CreateNoteResponse {

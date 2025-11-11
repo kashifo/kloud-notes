@@ -138,7 +138,7 @@ export async function PATCH(
       );
     }
 
-    const { content, password } = validation.data;
+    const { content, password, newShortCode } = validation.data;
 
     // Fetch existing note
     const { data: existingNote, error: fetchError } = await supabase
@@ -165,18 +165,37 @@ export async function PATCH(
       }
     }
 
+    // If newShortCode is provided, check if it's available
+    if (newShortCode && newShortCode !== code) {
+      const { data: existingCode } = await supabase
+        .from(TABLES.NOTES)
+        .select('id')
+        .eq('short_code', newShortCode)
+        .single();
+
+      if (existingCode) {
+        return NextResponse.json(
+          { error: 'Short code already in use' },
+          { status: 409 }
+        );
+      }
+    }
+
     // Hash new password if provided
     const passwordHash = password && !existingNote.password_hash
       ? await hashPassword(password)
       : existingNote.password_hash;
 
+    // Prepare update data
+    const updateData: { content?: string; password_hash?: string | null; short_code?: string } = {};
+    if (content !== undefined) updateData.content = content;
+    if (passwordHash !== undefined) updateData.password_hash = passwordHash;
+    if (newShortCode && newShortCode !== code) updateData.short_code = newShortCode;
+
     // Update note
     const { data: updatedNote, error: updateError } = await supabase
       .from(TABLES.NOTES)
-      .update({
-        content,
-        password_hash: passwordHash,
-      })
+      .update(updateData)
       .eq('short_code', code)
       .select()
       .single();

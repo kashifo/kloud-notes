@@ -65,12 +65,20 @@ export const updateNoteSchema = z.object({
     .refine((content) => {
       const byteSize = new Blob([content]).size;
       return byteSize <= NOTE.MAX_SIZE_BYTES;
-    }, `Note size cannot exceed ${NOTE.MAX_SIZE_BYTES / 1024} KB`),
+    }, `Note size cannot exceed ${NOTE.MAX_SIZE_BYTES / 1024} KB`)
+    .optional(),
 
   password: z
     .string()
     .min(PASSWORD.MIN_LENGTH, `Password must be at least ${PASSWORD.MIN_LENGTH} characters`)
     .max(PASSWORD.MAX_LENGTH, `Password cannot exceed ${PASSWORD.MAX_LENGTH} characters`)
+    .optional(),
+
+  newShortCode: z
+    .string()
+    .min(3, 'Custom code must be at least 3 characters')
+    .max(SHORT_CODE.CUSTOM_MAX_LENGTH, `Custom code cannot exceed ${SHORT_CODE.CUSTOM_MAX_LENGTH} characters`)
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Custom code can only contain letters, numbers, hyphens, and underscores')
     .optional(),
 });
 
