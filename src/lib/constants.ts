@@ -16,8 +16,8 @@ export const SHORT_CODE = {
  * Note content limits
  */
 export const NOTE = {
-  MAX_SIZE_BYTES: 10 * 1024, // 10 KB
-  MAX_SIZE_CHARS: 10000,
+  MAX_SIZE_BYTES: 1024 * 1024, // 1 MB
+  MAX_SIZE_CHARS: 100000, // 100k characters
 } as const;
 
 /**
