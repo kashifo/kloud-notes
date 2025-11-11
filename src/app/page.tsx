@@ -1,17 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Spinner } from '@/components/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { PasswordDialog } from '@/components/PasswordDialog';
 import { APP_URL } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
 import type { CreateNoteResponse, ErrorResponse, PublicNote, VerifyPasswordResponse } from '@/types/note';
 
-// Recents dropdown component
-function RecentsDropdown({ onClose, onSelect }: { onClose: () => void; onSelect: (url: string) => void }) {
+// Dynamically import heavy components that aren't always needed
+const PasswordDialog = dynamic(() => import('@/components/PasswordDialog').then(mod => ({ default: mod.PasswordDialog })), {
+  ssr: false,
+  loading: () => null,
+});
+
+// Recents dropdown component (memoized to prevent unnecessary re-renders)
+const RecentsDropdown = memo(function RecentsDropdown({ onClose, onSelect }: { onClose: () => void; onSelect: (url: string) => void }) {
   const [recents, setRecents] = useState<{ url: string; timestamp: number }[]>([]);
 
   useEffect(() => {
@@ -69,7 +75,7 @@ function RecentsDropdown({ onClose, onSelect }: { onClose: () => void; onSelect:
       </div>
     </>
   );
-}
+});
 
 export default function Home() {
   const [content, setContent] = useState('');
@@ -99,6 +105,7 @@ export default function Home() {
   const [showRecents, setShowRecents] = useState(false);
   const [isNewNote, setIsNewNote] = useState(true); // Track if this is a new note created in this session
   const [recentsCount, setRecentsCount] = useState(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // Track if we're still loading initial content
 
   // Code availability checking
   const [isCheckingCode, setIsCheckingCode] = useState(false);
@@ -212,6 +219,8 @@ export default function Home() {
           setContent(data.content);
           setHasPassword(data.has_password);
           saveToRecents(`${appUrl}/${code}`);
+          // Mark initial load as complete after content is set
+          setTimeout(() => setIsInitialLoad(false), 100);
         }
       }
     } catch (err) {
@@ -227,34 +236,80 @@ export default function Home() {
 
     try {
       setIsSaving(true);
-      const response = await fetch(`/api/notes/${noteCode}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: content.trim(),
-          password: password || undefined,
-        }),
-      });
 
-      const data: PublicNote | ErrorResponse = await response.json();
+      // Check if custom code has changed and this is a new note created in this session
+      if (isNewNote && customCode !== noteCode && codeAvailable === true) {
+        // Create a new note with the new custom code
+        const response = await fetch('/api/notes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: content.trim(),
+            password: password || undefined,
+            customCode: customCode,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error('error' in data ? data.error : 'Failed to save note');
-      }
+        const data: CreateNoteResponse | ErrorResponse = await response.json();
 
-      if ('content' in data) {
-        setNoteData(data);
-        setShowSaved(true);
-        setTimeout(() => setShowSaved(false), 3000);
+        if (!response.ok) {
+          throw new Error('error' in data ? data.error : 'Failed to update note link');
+        }
+
+        if ('url' in data) {
+          // Update state with new code
+          localStorage.setItem(`note_${data.shortCode}`, 'owner');
+          setNoteCode(data.shortCode);
+
+          // Update URL without reload
+          window.history.pushState({}, '', `/${data.shortCode}`);
+
+          // Save to recents
+          saveToRecents(data.url);
+
+          setShowSaved(true);
+          setTimeout(() => setShowSaved(false), 3000);
+
+          // Fetch the full note data
+          const noteResponse = await fetch(`/api/notes/${data.shortCode}`);
+          const noteData: PublicNote | ErrorResponse = await noteResponse.json();
+          if ('content' in noteData) {
+            setNoteData(noteData);
+          }
+        }
+      } else {
+        // Regular auto-save (PATCH existing note)
+        const response = await fetch(`/api/notes/${noteCode}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: content.trim(),
+            password: password || undefined,
+          }),
+        });
+
+        const data: PublicNote | ErrorResponse = await response.json();
+
+        if (!response.ok) {
+          throw new Error('error' in data ? data.error : 'Failed to save note');
+        }
+
+        if ('content' in data) {
+          setNoteData(data);
+          setShowSaved(true);
+          setTimeout(() => setShowSaved(false), 3000);
+        }
       }
     } catch (err) {
       console.error('Auto-save failed:', err);
     } finally {
       setIsSaving(false);
     }
-  }, [content, noteCode, password]);
+  }, [content, noteCode, password, isNewNote, customCode, codeAvailable, saveToRecents]);
 
   // Initialize - check if we're on a note page
   useEffect(() => {
@@ -289,8 +344,11 @@ export default function Home() {
       clearTimeout(autoSaveTimeout.current);
     }
 
-    // Only auto-save if note already exists
-    if (noteCode && content.trim()) {
+    // Only auto-save if:
+    // 1. Note already exists (has noteCode)
+    // 2. Has content
+    // 3. Initial load is complete (to avoid saving on load)
+    if (noteCode && content.trim() && !isInitialLoad) {
       autoSaveTimeout.current = setTimeout(() => {
         autoSave();
       }, 2000); // Auto-save after 2 seconds of no typing
@@ -301,7 +359,7 @@ export default function Home() {
         clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [content, noteCode, autoSave]);
+  }, [content, noteCode, autoSave, isInitialLoad]);
 
   // Password verification
   const handlePasswordSubmit = async (pwd: string) => {
@@ -334,6 +392,8 @@ export default function Home() {
         setPassword(pwd);
         setShowPasswordDialog(false);
         saveToRecents(`${appUrl}/${noteCode}`);
+        // Mark initial load as complete after content is set
+        setTimeout(() => setIsInitialLoad(false), 100);
       } else {
         setPasswordError('Incorrect password. Please try again.');
       }
@@ -385,6 +445,11 @@ export default function Home() {
 
         // Save to recents
         saveToRecents(data.url);
+
+        // Mark initial load as complete (we're done with the first save)
+        setIsInitialLoad(false);
+
+        // Keep isNewNote as true since this note was created in this session
 
         // Fetch the full note data
         const noteResponse = await fetch(`/api/notes/${data.shortCode}`);
@@ -451,10 +516,11 @@ export default function Home() {
     setShowPasswordDialog(false);
   };
 
-  // Handle custom code change (only for new notes before they're saved)
+  // Handle custom code change (only for new notes created in this session)
   const handleCustomCodeChange = (value: string) => {
-    // Only allow changes for new notes that haven't been saved yet
-    if (noteCode) return;
+    // Only allow changes for notes created in this session
+    // Even after auto-save, if it's a new note (not loaded from URL), allow editing
+    if (!isNewNote) return;
 
     const sanitized = value.replace(/[^a-zA-Z0-9_-]/g, '');
     setCustomCode(sanitized);
@@ -500,7 +566,14 @@ export default function Home() {
           <div className="flex items-center justify-between gap-4">
             {/* Left: Branding */}
             <Link href="/" className="flex items-center gap-3 group">
-              <Image src="/kloudnotes-logo-trans.png" alt="Kloud Notes Logo" width={32} height={32} className="dark:invert-0 invert group-hover:opacity-80 transition" />
+              <Image
+                src="/kloudnotes-logo-trans.png"
+                alt="Kloud Notes Logo"
+                width={32}
+                height={32}
+                priority
+                className="dark:invert-0 invert group-hover:opacity-80 transition"
+              />
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white group-hover:text-gray-700 dark:group-hover:text-gray-300 transition">
                 Kloud Notes
               </h1>
@@ -582,26 +655,26 @@ export default function Home() {
                     value={customCode}
                     onChange={(e) => handleCustomCodeChange(e.target.value)}
                     className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition text-sm ${
-                      !noteCode && codeAvailable === false
+                      isNewNote && codeAvailable === false
                         ? 'border-red-500 dark:border-red-500'
-                        : !noteCode && codeAvailable === true
+                        : isNewNote && codeAvailable === true
                         ? 'border-green-500 dark:border-green-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="custom-link"
-                    readOnly={!!noteCode}
+                    readOnly={!isNewNote}
                   />
                   {isCheckingCode && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
                       <Spinner size="sm" />
                     </div>
                   )}
-                  {!noteCode && !isCheckingCode && codeAvailable === true && (
+                  {isNewNote && !isCheckingCode && codeAvailable === true && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 font-bold">
                       ✓
                     </div>
                   )}
-                  {!noteCode && !isCheckingCode && codeAvailable === false && (
+                  {isNewNote && !isCheckingCode && codeAvailable === false && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold">
                       ✗
                     </div>
