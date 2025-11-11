@@ -19,6 +19,7 @@ const PasswordDialog = dynamic(() => import('@/components/PasswordDialog').then(
 // Recents dropdown component (memoized to prevent unnecessary re-renders)
 const RecentsDropdown = memo(function RecentsDropdown({ onClose, onSelect }: { onClose: () => void; onSelect: (url: string) => void }) {
   const [recents, setRecents] = useState<{ url: string; timestamp: number }[]>([]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedRecents = localStorage.getItem('kloud_notes_recents');
@@ -30,7 +31,35 @@ const RecentsDropdown = memo(function RecentsDropdown({ onClose, onSelect }: { o
         console.error('Failed to parse recents', e);
       }
     }
-  }, []);
+
+    // Auto-dismiss after 10 seconds
+    const autoCloseTimer = setTimeout(() => {
+      onClose();
+    }, 10000);
+
+    // Handle clicks outside and other interactions
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      clearTimeout(autoCloseTimer);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
 
   const handleClearRecents = () => {
     localStorage.removeItem('kloud_notes_recents');
@@ -38,9 +67,9 @@ const RecentsDropdown = memo(function RecentsDropdown({ onClose, onSelect }: { o
   };
 
   return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose}></div>
-      <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 max-h-96 overflow-auto">
+    <div
+      ref={dropdownRef}
+      className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 max-h-96 overflow-auto">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <h3 className="font-semibold text-gray-900 dark:text-white">Recent Notes</h3>
           {recents.length > 0 && (
@@ -72,8 +101,7 @@ const RecentsDropdown = memo(function RecentsDropdown({ onClose, onSelect }: { o
             ))}
           </div>
         )}
-      </div>
-    </>
+    </div>
   );
 });
 
@@ -270,7 +298,6 @@ export default function Home() {
           saveToRecents(data.url);
 
           setShowSaved(true);
-          setTimeout(() => setShowSaved(false), 3000);
 
           // Fetch the full note data
           const noteResponse = await fetch(`/api/notes/${data.shortCode}`);
@@ -301,7 +328,6 @@ export default function Home() {
         if ('content' in data) {
           setNoteData(data);
           setShowSaved(true);
-          setTimeout(() => setShowSaved(false), 3000);
         }
       }
     } catch (err) {
@@ -438,7 +464,6 @@ export default function Home() {
         setNoteCode(data.shortCode);
         setCustomCode(data.shortCode);
         setShowSaved(true);
-        setTimeout(() => setShowSaved(false), 3000);
 
         // Update URL without reload
         window.history.pushState({}, '', `/${data.shortCode}`);
@@ -549,6 +574,7 @@ export default function Home() {
   };
 
   const charCount = content.length;
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   if (isLoadingNote) {
     return (
@@ -645,48 +671,49 @@ export default function Home() {
           <div className="flex-1 flex flex-col gap-4 overflow-hidden">
             {/* Custom Link Row - Hidden by default, shown on Get Link click */}
             {showCustomLinkRow && (
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                  {appUrl}/
-                </span>
-                <div className="relative flex-1 sm:flex-none sm:w-64">
-                  <input
-                    type="text"
-                    value={customCode}
-                    onChange={(e) => handleCustomCodeChange(e.target.value)}
-                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition text-sm ${
-                      isNewNote && codeAvailable === false
-                        ? 'border-red-500 dark:border-red-500'
-                        : isNewNote && codeAvailable === true
-                        ? 'border-green-500 dark:border-green-500'
-                        : 'border-gray-300 dark:border-gray-600'
-                    }`}
-                    placeholder="custom-link"
-                    readOnly={!isNewNote}
-                  />
-                  {isCheckingCode && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <Spinner size="sm" />
-                    </div>
-                  )}
-                  {isNewNote && !isCheckingCode && codeAvailable === true && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 font-bold">
-                      ✓
-                    </div>
-                  )}
-                  {isNewNote && !isCheckingCode && codeAvailable === false && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold">
-                      ✗
-                    </div>
-                  )}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {appUrl}/
+                  </span>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={customCode}
+                      onChange={(e) => handleCustomCodeChange(e.target.value)}
+                      className={`px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent outline-none transition text-sm ${
+                        isNewNote && codeAvailable === false
+                          ? 'border-red-500 dark:border-red-500'
+                          : isNewNote && codeAvailable === true
+                          ? 'border-green-500 dark:border-green-500'
+                          : 'border-gray-300 dark:border-gray-600'
+                      }`}
+                      placeholder="custom-link"
+                      readOnly={!isNewNote}
+                    />
+                    {isCheckingCode && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Spinner size="sm" />
+                      </div>
+                    )}
+                    {isNewNote && !isCheckingCode && codeAvailable === true && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 font-bold">
+                        ✓
+                      </div>
+                    )}
+                    {isNewNote && !isCheckingCode && codeAvailable === false && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold">
+                        ✗
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <button
                   onClick={handleCopyLink}
-                  className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-gray-100 dark:bg-gray-800 text-green-600 dark:text-green-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium whitespace-nowrap"
+                  className="px-4 py-2 text-sm text-green-600 dark:text-green-400 font-medium"
                 >
-                  <span>🔗</span>
-                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  🔗 {copied ? 'Copied!' : 'Copy Link'}
                 </button>
               </div>
             )}
@@ -708,19 +735,19 @@ export default function Home() {
                     </span>
                   )}
                   {showSaved && !isSaving && (
-                    <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <span className="text-white dark:text-white flex items-center gap-1">
                       <span>☁️</span>
                       <span>Saved to cloud</span>
                     </span>
                   )}
-                  {noteData && (
+                  {noteData && !isNewNote && !showSaved && (
                     <span className="text-gray-500 dark:text-gray-400 text-xs">
                       Updated: {formatDate(noteData.updated_at)}
                     </span>
                   )}
                 </div>
                 <span className="text-gray-500 dark:text-gray-400">
-                  {charCount.toLocaleString()} characters
+                  {wordCount.toLocaleString()} words • {charCount.toLocaleString()} characters
                 </span>
               </div>
             </div>
