@@ -19,28 +19,37 @@ const ThemeContext = createContext<ThemeContextType>({
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setTheme] = useState<Theme>(() => {
+    // Initialize from localStorage or system preference during first render
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme') as Theme | null;
+      if (savedTheme === 'dark' || savedTheme === 'light') {
+        return savedTheme;
+      }
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      return prefersDark ? 'dark' : 'light';
+    }
+    return 'light';
+  });
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    // Always check localStorage first - this takes precedence over system preference
-    const savedTheme = localStorage.getItem('theme') as Theme | null;
-
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      // User has explicitly set a theme - use it
-      setTheme(savedTheme);
-      applyTheme(savedTheme);
-    } else {
-      // No saved preference - check system preference only once
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const defaultTheme = prefersDark ? 'dark' : 'light';
-      setTheme(defaultTheme);
-      applyTheme(defaultTheme);
-    }
+    // Apply theme on mount
+    applyTheme(theme);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    // Apply theme whenever it changes
+    if (mounted) {
+      applyTheme(theme);
+    }
+  }, [theme, mounted]);
+
   const applyTheme = (newTheme: Theme) => {
+    if (typeof window === 'undefined') return;
+
     // Remove both classes first to ensure clean state
     document.documentElement.classList.remove('dark', 'light');
 
@@ -51,12 +60,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleTheme = () => {
-    if (!mounted) return;
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     // Save to localStorage to persist user's explicit choice
-    localStorage.setItem('theme', newTheme);
-    applyTheme(newTheme);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('theme', newTheme);
+    }
   };
 
   return (

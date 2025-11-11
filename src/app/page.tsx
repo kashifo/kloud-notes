@@ -247,8 +247,7 @@ export default function Home() {
           setContent(data.content);
           setHasPassword(data.has_password);
           saveToRecents(`${appUrl}/${code}`);
-          // Mark initial load as complete after content is set
-          setTimeout(() => setIsInitialLoad(false), 100);
+          // Keep isInitialLoad as true - will be set to false on first user edit
         }
       }
     } catch (err) {
@@ -418,8 +417,7 @@ export default function Home() {
         setPassword(pwd);
         setShowPasswordDialog(false);
         saveToRecents(`${appUrl}/${noteCode}`);
-        // Mark initial load as complete after content is set
-        setTimeout(() => setIsInitialLoad(false), 100);
+        // Keep isInitialLoad as true - will be set to false on first user edit
       } else {
         setPasswordError('Incorrect password. Please try again.');
       }
@@ -493,6 +491,11 @@ export default function Home() {
   // Handle content change
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
+
+    // Mark initial load as complete when user types
+    if (isInitialLoad) {
+      setIsInitialLoad(false);
+    }
 
     // Trigger auto-save for existing notes (handled by useEffect)
     // For new notes, save on first keystroke
@@ -735,14 +738,14 @@ export default function Home() {
                     </span>
                   )}
                   {showSaved && !isSaving && (
-                    <span className="text-white dark:text-white flex items-center gap-1">
+                    <span className="text-green-600 dark:text-white flex items-center gap-1">
                       <span>☁️</span>
                       <span>Saved to cloud</span>
                     </span>
                   )}
                   {noteData && !isNewNote && !showSaved && (
                     <span className="text-gray-500 dark:text-gray-400 text-xs">
-                      Updated: {formatDate(noteData.updated_at)}
+                      Created: {formatDate(noteData.created_at)} • Updated: {formatDate(noteData.updated_at)}
                     </span>
                   )}
                 </div>
