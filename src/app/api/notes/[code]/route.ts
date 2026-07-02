@@ -5,8 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { toPublicNoteFromFirestore } from '@/lib/utils';
+import { FieldValue, Transaction, DocumentData } from 'firebase-admin/firestore';
+import { toPublicNoteFromFirestore, RawNoteData } from '@/lib/utils';
 import { getClientIp, hashPassword, verifyPassword } from '@/lib/security';
 import { fetchNoteRateLimit, checkRateLimit, createNoteRateLimit } from '@/lib/ratelimit';
 import { updateNoteSchema } from '@/lib/validation';
@@ -67,7 +67,7 @@ export async function GET(
     if (note.password_hash) {
       return NextResponse.json(
         {
-          ...toPublicNoteFromFirestore(code, note),
+          ...toPublicNoteFromFirestore(code, note as RawNoteData),
           content: '', // Don't return content for password-protected notes
         },
         { status: 200 }
@@ -75,7 +75,7 @@ export async function GET(
     }
 
     // Return public note
-    return NextResponse.json(toPublicNoteFromFirestore(code, note), { status: 200 });
+    return NextResponse.json(toPublicNoteFromFirestore(code, note as RawNoteData), { status: 200 });
   } catch (error) {
     console.error('Unexpected error in GET /api/notes/[code]:', error);
     return NextResponse.json(
@@ -144,10 +144,10 @@ export async function PATCH(
     const noteRef = db.collection('kloudNotes').doc(code);
     const signalRef = db.collection('kloudNoteSignals').doc(code);
 
-    let updatedNote: any = null;
+    let updatedNote: DocumentData | null = null;
 
     try {
-      const success = await db.runTransaction(async (transaction: any) => {
+      const success = await db.runTransaction(async (transaction: Transaction) => {
         const doc = await transaction.get(noteRef);
         if (!doc.exists) return false;
         
@@ -193,17 +193,19 @@ export async function PATCH(
       if (!success) {
         return NextResponse.json({ error: 'Note not found' }, { status: 404 });
       }
-    } catch (err: any) {
-      if (err.message === 'PASSWORD_REQUIRED') {
-        return NextResponse.json({ error: 'Password is required to update a protected note' }, { status: 401 });
-      }
-      if (err.message === 'INVALID_PASSWORD') {
-        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.message === 'PASSWORD_REQUIRED') {
+          return NextResponse.json({ error: 'Password is required to update a protected note' }, { status: 401 });
+        }
+        if (err.message === 'INVALID_PASSWORD') {
+          return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+        }
       }
       throw err;
     }
 
-    return NextResponse.json(toPublicNoteFromFirestore(code, updatedNote), { status: 200 });
+    return NextResponse.json(toPublicNoteFromFirestore(code, updatedNote! as RawNoteData), { status: 200 });
   } catch (error) {
     console.error('Unexpected error in PATCH /api/notes/[code]:', error);
     return NextResponse.json(

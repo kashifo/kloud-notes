@@ -1,6 +1,6 @@
 import { NoteEditorClient } from '@/components/NoteEditorClient';
 import { getAdminDb } from '@/lib/firebase-admin';
-import { toPublicNoteFromFirestore } from '@/lib/utils';
+import { toPublicNoteFromFirestore, RawNoteData } from '@/lib/utils';
 import { notFound } from 'next/navigation';
 
 export default async function NotePage({ params }: { params: Promise<{ code: string }> }) {
@@ -18,7 +18,7 @@ export default async function NotePage({ params }: { params: Promise<{ code: str
   const note = docSnap.data()!;
 
   const publicNote = {
-    ...toPublicNoteFromFirestore(code, note),
+    ...toPublicNoteFromFirestore(code, note as RawNoteData),
     content: note.password_hash ? '' : note.content, // Hide content if password protected
   };
 

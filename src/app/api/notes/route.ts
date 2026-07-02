@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Transaction } from 'firebase-admin/firestore';
 import { createNoteSchema } from '@/lib/validation';
 import { hashPassword, getClientIp } from '@/lib/security';
 import { generateShortCode, generateNoteUrl } from '@/lib/utils';
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
 
     if (customCode) {
       finalShortCode = customCode;
-      const success = await db.runTransaction(async (transaction: any) => {
+      const success = await db.runTransaction(async (transaction: Transaction) => {
         const noteRef = db.collection('kloudNotes').doc(finalShortCode);
         const noteDoc = await transaction.get(noteRef);
 
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
       while (attempts < SHORT_CODE.GENERATION_ATTEMPTS) {
         const candidateCode = generateShortCode();
         
-        const success = await db.runTransaction(async (transaction: any) => {
+        const success = await db.runTransaction(async (transaction: Transaction) => {
           const noteRef = db.collection('kloudNotes').doc(candidateCode);
           const doc = await transaction.get(noteRef);
           

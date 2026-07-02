@@ -53,20 +53,29 @@ export function formatDate(dateString: string): string {
   }).format(date);
 }
 
+export interface RawNoteData {
+  short_code: string;
+  content: string;
+  password_hash?: string | null;
+  created_at?: { toDate: () => Date } | string | Date;
+  updated_at?: { toDate: () => Date } | string | Date;
+  [key: string]: unknown;
+}
+
 /**
  * Converts a note to public format (removes sensitive data) from Firestore
  */
-export function toPublicNoteFromFirestore(noteId: string, data: any) {
+export function toPublicNoteFromFirestore(noteId: string, data: RawNoteData) {
   return {
     id: noteId,
     short_code: data.short_code,
     content: data.content,
     has_password: !!data.password_hash,
-    created_at: typeof data.created_at?.toDate === 'function' 
-      ? data.created_at.toDate().toISOString() 
-      : data.created_at,
-    updated_at: typeof data.updated_at?.toDate === 'function' 
-      ? data.updated_at.toDate().toISOString() 
-      : data.updated_at,
+    created_at: data.created_at && typeof (data.created_at as { toDate?: () => Date }).toDate === 'function' 
+      ? (data.created_at as { toDate: () => Date }).toDate().toISOString() 
+      : data.created_at as string,
+    updated_at: data.updated_at && typeof (data.updated_at as { toDate?: () => Date }).toDate === 'function' 
+      ? (data.updated_at as { toDate: () => Date }).toDate().toISOString() 
+      : data.updated_at as string,
   };
 }

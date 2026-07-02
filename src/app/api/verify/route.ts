@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
 import { verifyPasswordSchema } from '@/lib/validation';
 import { verifyPassword, getClientIp } from '@/lib/security';
-import { toPublicNoteFromFirestore } from '@/lib/utils';
+import { toPublicNoteFromFirestore, RawNoteData } from '@/lib/utils';
 import { verifyPasswordRateLimit, checkRateLimit } from '@/lib/ratelimit';
 import type { VerifyPasswordResponse, ErrorResponse } from '@/types/note';
 
@@ -89,13 +89,7 @@ export async function POST(
     }
 
     // Return note with content
-    return NextResponse.json(
-      {
-        valid: true,
-        note: toPublicNoteFromFirestore(shortCode, note),
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ valid: true, note: toPublicNoteFromFirestore(shortCode, note as RawNoteData) }, { status: 200 });
   } catch (error) {
     console.error('Unexpected error in POST /api/verify:', error);
     return NextResponse.json(
