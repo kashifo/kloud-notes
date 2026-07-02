@@ -3,13 +3,15 @@
 import { useState, FormEvent, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { firestore } from '@/lib/firebase-client';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { Spinner } from '@/components/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PasswordDialog } from '@/components/PasswordDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
 import { formatDate } from '@/lib/utils';
 import { APP_URL } from '@/lib/constants';
+import { FilePlus, Lock, Unlock, Link as LinkIcon, Check } from 'lucide-react';
 import type { PublicNote, ErrorResponse, VerifyPasswordResponse, CreateNoteResponse } from '@/types/note';
 
 type NoteEditorMode = 'create' | 'edit';
@@ -59,29 +61,29 @@ export function NoteEditorClient({ mode, code, initialNote }: NoteEditorClientPr
     }
   }, [mode, initialNote]);
 
-  // Edit mode: Realtime updates via Supabase Broadcast
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  // Edit mode: Realtime updates via Firestore
   useEffect(() => {
     if (mode !== 'edit' || !code) return;
 
-    const channel = supabase.channel(`note_${code}`);
-    channelRef.current = channel;
-
-    channel
-      .on('broadcast', { event: 'note_updated' }, (payload) => {
-        if (payload.payload?.updated_at) {
-          const serverDate = new Date(payload.payload.updated_at);
+    const unsubscribe = onSnapshot(doc(firestore, 'kloudNoteSignals', code), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.updated_at) {
+          const serverDate = typeof data.updated_at?.toDate === 'function' 
+            ? data.updated_at.toDate() 
+            : new Date(data.updated_at);
           const localDate = note?.updated_at ? new Date(note.updated_at) : new Date(0);
-          if (serverDate > localDate) {
+          
+          // Only trigger if the server date is significantly newer (e.g. > 5 seconds)
+          // This prevents the author from seeing a reload banner for their own updates
+          if (serverDate.getTime() - localDate.getTime() > 5000) {
             setHasServerChanges(true);
           }
         }
-      })
-      .subscribe();
+      }
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [mode, code, note?.updated_at]);
 
   // Create mode: Check if custom code is available
@@ -227,15 +229,7 @@ export function NoteEditorClient({ mode, code, initialNote }: NoteEditorClientPr
           const url = `${appUrl}/${code}`;
           setNoteUrl(url);
           setShowSuccessDialog(true);
-          
-          // Broadcast the update to other clients
-          if (channelRef.current) {
-            channelRef.current.send({
-              type: 'broadcast',
-              event: 'note_updated',
-              payload: { updated_at: data.updated_at },
-            }).catch(console.error);
-          }
+          setIsLoading(false);
         }
       } else {
         // Create new note
@@ -314,21 +308,25 @@ export function NoteEditorClient({ mode, code, initialNote }: NoteEditorClientPr
                   onClick={handleNewNote}
                   className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
                 >
-                  📝 New Note
+                  <FilePlus className="w-4 h-4" /> New Note
                 </button>
               )}
               <button
                 onClick={handlePasswordToggle}
                 className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
               >
-                {hasPassword || password ? '🔒 Password Protected' : '🔓 Protect with Password'}
+                {hasPassword || password ? (
+                  <><Lock className="w-4 h-4" /> Password Protected</>
+                ) : (
+                  <><Unlock className="w-4 h-4" /> Protect with Password</>
+                )}
               </button>
               {((mode === 'edit' && code) || (mode === 'create' && customCode)) && (
                 <button
                   onClick={handleCopyLink}
                   className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
                 >
-                  {copied ? '✓ Copied' : '🔗 Copy Link'}
+                  {copied ? <><Check className="w-4 h-4" /> Copied</> : <><LinkIcon className="w-4 h-4" /> Copy Link</>}
                 </button>
               )}
               <button
@@ -336,7 +334,9 @@ export function NoteEditorClient({ mode, code, initialNote }: NoteEditorClientPr
                 className="sm:hidden p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition relative"
                 aria-label="Password protection"
               >
-                <span className="text-xl">{hasPassword || password ? '🔒' : '🔓'}</span>
+                <span className="flex items-center justify-center">
+                  {hasPassword || password ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                </span>
                 {(hasPassword || password) && (
                   <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"></span>
                 )}
@@ -389,12 +389,12 @@ export function NoteEditorClient({ mode, code, initialNote }: NoteEditorClientPr
                     )}
                     {!isCheckingCode && codeAvailable === true && (
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
-                        ✓
+                        <Check className="w-4 h-4" />
                       </div>
                     )}
                     {!isCheckingCode && codeAvailable === false && (
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500">
-                        ✗
+                        <span className="font-bold">✗</span>
                       </div>
                     )}
                   </div>

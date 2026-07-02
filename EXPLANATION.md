@@ -15,27 +15,28 @@ The app is built using the **Next.js 15 App Router** paradigm, which enforces a 
 
 * **Frontend:** React 19, Tailwind CSS 4 for styling.
 * **Backend:** Next.js Route Handlers (`/api/*`).
-* **Database:** Supabase (PostgreSQL).
+* **Database:** Firebase Firestore.
 * **Validation:** Zod (ensures data coming from the client is correctly formatted).
-* **Security:** `bcryptjs` for password hashing, Supabase Row-Level Security (RLS).
+* **Security:** `bcryptjs` for password hashing, Firestore Security Rules.
 
 ---
 
-## 3. Database & Security Model (The "RLS Bypass" Pattern)
+## 3. Database & Security Model (The "Security Rule Bypass" Pattern)
 
 ### The Database Schema
-There is a single table called `notes`:
-* `id` (UUID, Primary Key)
-* `short_code` (String, Unique): The URL path (e.g., `abc123`).
+We use Firebase Firestore with a `kloudNotes` collection. Each document uses the short code as its ID (`kloudNotes/{shortCode}`) and contains:
+* `short_code` (String, Unique)
 * `content` (String): The actual text of the note.
 * `password_hash` (String, Nullable): The bcrypt hash of the password, if one is set.
+* `created_at` (Timestamp)
+* `updated_at` (Timestamp)
 
 ### How Security Works
-The database has **Row-Level Security (RLS) enabled with NO public policies**. This means if someone tries to query the database directly from their browser, the database will strictly deny the request. 
+The database has **Firestore Security Rules enabled to strictly deny all reads and writes** to the `kloudNotes` collection. This means if someone tries to query the database directly from their browser, the database will strictly deny the request. 
 
 We do this because if we allowed public read access, hackers could steal the `content` of password-protected notes without ever guessing the password.
 
-Instead, the frontend must always talk to our **Next.js API Routes**. Inside these API routes, we use a special `getServiceClient()` which possesses the `SUPABASE_SERVICE_ROLE_KEY`. This is an admin key that bypasses RLS. 
+Instead, the frontend must always talk to our **Next.js API Routes**. Inside these API routes, we use the **Firebase Admin SDK** which bypasses all security rules. 
 **Flow:** Client -> Next.js API (Validates logic & passwords) -> Admin Database Access.
 
 ---
@@ -49,8 +50,8 @@ Instead, the frontend must always talk to our **Next.js API Routes**. Inside the
 4. **Backend (`src/app/api/notes/route.ts`):** 
    * If a custom code wasn't provided, the server generates a random string using `nanoid`.
    * If a password was provided, it is securely hashed using `bcrypt` (10 rounds).
-   * The note is inserted into the database. If a custom code was chosen but already exists, the database throws a unique constraint error (`23505`), and the API returns a `409 Conflict`.
-5. The frontend redirects the user to the newly created note's URL using `window.location.href`. This triggers a full page transition to the `/[code]` route, ensuring the client mounts in "Edit" mode and correctly subscribes to the Supabase Realtime channel.
+   * The note is inserted into the database using a Firestore Transaction to ensure the code is unique and not already taken. If taken, it returns a `409 Conflict`.
+5. The frontend redirects the user to the newly created note's URL using `window.location.href`. This triggers a full page transition to the `/[code]` route, ensuring the client mounts in "Edit" mode and correctly subscribes to the Firestore snapshot listener.
 
 ### B. Viewing a Note (`/[code]`)
 1. When a user visits `https://yourapp.com/abc123`, the request hits `src/app/[code]/page.tsx`. This is a **Server Component**.
@@ -68,14 +69,13 @@ Instead, the frontend must always talk to our **Next.js API Routes**. Inside the
    * If the note is protected, the user *must* provide the current password alongside their edits. The API verifies the password again before updating the database.
 4. **Changing/Removing Passwords:** Users can pass `newPassword` or `removePassword` flags in the `PATCH` request. The API handles swapping the hash or setting it to `null`.
 
-### D. Live Cross-Device Sync (Supabase Realtime Broadcast)
-Because anyone with the link can edit the note, multiple people might have it open at once. To prevent them from silently overwriting each other, we use **Supabase Realtime Broadcast**.
+### D. Live Cross-Device Sync (Firestore Listeners)
+Because anyone with the link can edit the note, multiple people might have it open at once. To prevent them from silently overwriting each other, we use **Firestore snapshot listeners** on a metadata-only collection.
 
-1. When a user opens a note, their browser opens a lightweight WebSocket connection subscribing to a specific channel: `note_abc123`.
-2. When User A clicks "Update", the `PATCH` request goes to the server and saves the data.
-3. Upon a successful save, User A's browser sends a tiny `broadcast` ping through the WebSocket channel saying *"Hey, this note just updated!"*
-4. User B receives this ping instantly. Since the ping proves the database was updated, User B's screen displays a yellow banner: *"This note has been updated remotely. Reload to view changes."*
-5. **Security Note:** We use Broadcasts (empty pings) instead of Database Realtime (streaming rows). Streaming rows would expose the text of password-protected notes to anyone listening on the WebSocket.
+1. When a user opens a note, their browser opens a lightweight snapshot listener subscribing to a specific document: `kloudNoteSignals/{code}`.
+2. When User A clicks "Update", the `PATCH` request goes to the server and saves the data to the `kloudNotes` collection. It also updates the `kloudNoteSignals` document with a new timestamp.
+3. User B receives the snapshot update instantly. Since the ping proves the database was updated, User B's screen displays a yellow banner: *"This note has been updated remotely. Reload to view changes."*
+4. **Security Note:** We use the `kloudNoteSignals` collection instead of listening directly to the `kloudNotes` collection. Listening directly to `kloudNotes` would expose the text of password-protected notes to anyone listening. The security rules allow public read access to `kloudNoteSignals` but completely block access to `kloudNotes`.
 
 ---
 
@@ -91,7 +91,8 @@ Because anyone with the link can edit the note, multiple people might have it op
 * **`api/check/[code]/route.ts`**: The endpoint used to check if a custom short code is already taken.
 
 ### Libraries & Utilities (`src/lib/`)
-* **`supabase.ts`**: Exports `supabase` (the public anon client used for Realtime WebSockets) and `getServiceClient()` (the admin backend client used for database read/writes).
+* **`firebase-admin.ts`**: Initializes and exports the Firebase Admin SDK used for database read/writes in the backend.
+* **`firebase-client.ts`**: Initializes and exports the Firebase Web SDK used for snapshot listeners in the frontend.
 * **`security.ts`**: Houses the `bcrypt` hashing/verifying logic, and IP extraction logic.
 * **`validation.ts`**: Contains all the `zod` schemas. This guarantees that APIs fail safely if a user sends bad data (e.g., a short code that is too short).
 * **`ratelimit.ts`**: Contains the logic to prevent spam (e.g., creating 100 notes a second).
@@ -108,3 +109,16 @@ Because anyone with the link can edit the note, multiple people might have it op
 To prevent abuse (like brute-forcing passwords or spamming note creation), the app uses a rate limiter found in `src/lib/ratelimit.ts`.
 * **Production:** It expects an **Upstash Redis** database to track IP addresses globally across all your Vercel serverless functions.
 * **Development/Fallback:** If Upstash isn't configured, it gracefully falls back to a simple JavaScript `Map` in memory, ensuring that the app remains functional even in production without Redis. While fine for basic usage, keep in mind that in a serverless environment, memory is wiped constantly, meaning the fallback isn't a robust safeguard against heavy distributed attacks.
+
+---
+
+## 7. Previous Implementation (Supabase)
+Before migrating to Firebase, Kloud Notes was built on top of **Supabase (PostgreSQL)**. 
+
+### Database & RLS
+The app used a PostgreSQL `notes` table with **Row Level Security (RLS)** strictly configured to deny all public reads and writes. To perform CRUD operations, the Next.js API routes instantiated a Supabase client using a secret `SUPABASE_SERVICE_ROLE_KEY`. This service role bypassed RLS policies, allowing the backend to read notes, verify passwords, and securely scrub content before sending the data to the browser client. 
+
+### Realtime Sync (Supabase Broadcast)
+Instead of listening to database changes (which would have leaked protected content via WebSockets), the frontend used **Supabase Realtime Broadcast**. 
+When a user updated a note, the API successfully saved it to PostgreSQL. Then, the user's frontend `NoteEditorClient` manually emitted a `broadcast` event to `supabase.channel('note_{code}')`. Any other browser viewing the same note was subscribed to this channel. Upon receiving the ping, they would display the yellow reload banner. 
+This approach was secure because the ping only contained a timestamp, not the note's text, completely isolating the realtime channel from the database contents.

@@ -1,6 +1,6 @@
 # Kloud Notes - Secure Cloud Notepad
 
-A secure, cloud-based notepad web application built with Next.js, TypeScript, and Supabase. Users can create, share, and optionally password-protect notes without requiring login.
+A secure, cloud-based notepad web application built with Next.js, TypeScript, and Firebase. Users can create, share, and optionally password-protect notes without requiring login.
 
 ## Features
 
@@ -8,7 +8,7 @@ A secure, cloud-based notepad web application built with Next.js, TypeScript, an
 - **Password Protection** - Optionally secure notes with bcrypt-hashed passwords
 - **Unique Short Codes** - Each note gets a unique, shareable short URL
 - **Custom Short Codes** - Create custom memorable URLs for your notes
-- **Secure by Default** - Row Level Security (RLS) enabled in Supabase
+- **Secure by Default** - Security rules enabled in Firestore
 - **Rate Limited** - Built-in protection against abuse
 - **Mobile Friendly** - Responsive design works on all devices
 - **Production Ready** - Optimized for deployment on Vercel
@@ -16,7 +16,7 @@ A secure, cloud-based notepad web application built with Next.js, TypeScript, an
 ## Tech Stack
 
 - **Frontend**: Next.js 15 (App Router), TypeScript, TailwindCSS
-- **Backend**: Supabase (PostgreSQL with RLS)
+- **Backend**: Firebase Firestore, Firebase Admin SDK
 - **Validation**: Zod
 - **Security**: bcryptjs, Rate Limiting (Upstash)
 - **Deployment**: Vercel
@@ -24,8 +24,9 @@ A secure, cloud-based notepad web application built with Next.js, TypeScript, an
 ## Prerequisites
 
 - Node.js 18+ and pnpm (or corepack enable)
-- A Supabase account ([sign up here](https://supabase.com))
-- Optional: Upstash Redis account for production rate limiting
+- Firebase Firestore for database and realtime cross-device sync.
+- Firebase Admin SDK for secure, bypassed database access on the server.
+- Optional Upstash Redis for production rate limiting.
 
 ## Getting Started
 
@@ -42,23 +43,14 @@ cd kloud-notes
 pnpm install
 ```
 
-### 3. Set Up Supabase
+### 3. Firebase Setup
 
-1. Create a new project at [Supabase](https://app.supabase.com)
-2. Go to **Project Settings** > **API** and copy:
-   - Project URL
-   - Anon (public) key
-   - Service role key (keep this secret!)
-
-3. Run the database migration:
-   - Go to **SQL Editor** in your Supabase dashboard
-   - Copy the contents of `supabase/migrations/00001_create_notes_table.sql`
-   - Paste and run it
-
-This will:
-- Create the `notes` table
-- Add necessary indexes
-- Enable Row Level Security (RLS) to strictly deny public access
+1. Create a Firebase Project at [Firebase Console](https://console.firebase.google.com/).
+2. Add a Web App and get the configuration.
+3. Go to Firestore Database and create a database.
+4. Copy the contents of `firestore.rules` and paste them into the **Rules** tab of your Firestore Database (or deploy via Firebase CLI).
+5. Go to Project Settings > Service Accounts and generate a new private key.
+6. Update `.env.local` with your Firebase client configuration and Admin SDK credentials.
 
 ### 4. Configure Environment Variables
 
@@ -71,10 +63,16 @@ cp .env.example .env.local
 Edit `.env.local` with your values:
 
 ```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+# Firebase client configuration
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+
+# Firebase Admin SDK
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
 
 # Application URL
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -115,7 +113,8 @@ kloud-notes/
 │   │   ├── PasswordDialog.tsx
 │   │   └── Spinner.tsx
 │   ├── lib/
-│   │   ├── supabase.ts      # Supabase client
+│   │   ├── firebase-client.ts    # Firebase client initialization
+│   │   ├── firebase-admin.ts     # Firebase Admin SDK initialization
 │   │   ├── validation.ts    # Zod schemas
 │   │   ├── security.ts      # Password hashing/verification
 │   │   ├── utils.ts         # Utility functions
@@ -123,9 +122,6 @@ kloud-notes/
 │   │   └── ratelimit.ts     # Rate limiting
 │   └── types/
 │       └── note.ts          # TypeScript interfaces
-├── supabase/
-│   └── migrations/
-│       └── 00001_create_notes_table.sql
 ├── .env.example
 ├── .env.local              # Your local environment variables (not committed)
 └── README.md
@@ -172,12 +168,12 @@ Verify password for a password-protected note.
 
 ## Security Features
 
-- **Row Level Security (RLS)**: Database-level security policies
+- **Firestore Security Rules**: Database-level security policies
 - **Password Hashing**: Bcrypt with 10 rounds
 - **Rate Limiting**: Protects against brute-force attacks
 - **Input Validation**: Zod schemas validate all inputs
 - **XSS Prevention**: Input sanitization
-- **No Exposed Secrets**: Service role key never sent to client
+- **No Exposed Secrets**: Firebase Admin SDK keys never sent to client
 - **Constant-Time Comparison**: Password verification resistant to timing attacks
 
 ## Deployment to Vercel
@@ -195,9 +191,7 @@ git push origin main
 1. Go to [Vercel](https://vercel.com)
 2. Import your repository
 3. Add environment variables:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
+   - All Firebase Client and Admin variables
    - `NEXT_PUBLIC_APP_URL` (set to your Vercel URL)
    - Optional: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
 
@@ -211,7 +205,10 @@ After deployment, update `NEXT_PUBLIC_APP_URL` in Vercel settings to your produc
 
 ### Rate Limiting
 
-Edit `src/lib/constants.ts` to adjust rate limits:
+Check:
+* `src/lib/firebase-admin.ts`
+* `src/lib/firebase-client.ts`
+* `src/lib/security.ts`:
 
 ```typescript
 export const RATE_LIMIT = {
@@ -271,10 +268,10 @@ pnpm lint
 
 ## TESTING
   1. Run pnpm build and pnpm lint.
-  2. Test with a real Supabase project using the current migration.
-  3. Verify create, open by link, edit, password lock/unlock, change password, remove password.
-  4. Test two browsers/devices for the realtime reload banner.
-  5. Confirm Vercel env vars are set, especially SUPABASE_SERVICE_ROLE_KEY.
+  2. Test with a real Firebase project using the current rules.
+  3. Enter custom codes and ensure duplicates are blocked gracefully (HTTP 409).
+  4. Edit notes from multiple tabs to verify realtime sync and concurrency.
+  5. Confirm Vercel env vars are set, especially FIREBASE_PRIVATE_KEY.
   6. Decide whether Upstash is required for production-grade rate limiting
 
 ## Future Enhancements
@@ -291,16 +288,16 @@ pnpm lint
 1. **Never commit `.env.local`** - It contains sensitive keys
 2. **Rotate keys regularly** - Especially if compromised
 3. **Monitor rate limits** - Adjust based on your traffic
-4. **Set up Supabase auth** - For future user-specific features
-5. **Enable database backups** - In Supabase dashboard
+4. **Set up Firebase Auth** - For future user-specific features
+5. **Enable database backups** - In Firebase console
 
 ## Troubleshooting
 
 ### Database Connection Issues
 
-- Verify Supabase URL and keys are correct
-- Check if RLS policies are properly set up
-- Ensure database migration was run successfully
+- Verify Firebase URL and keys are correct
+- Check if Firestore security rules are deployed
+- Ensure Firebase Admin SDK credentials are correct
 
 ### Rate Limiting Not Working
 
@@ -328,4 +325,4 @@ For issues and questions, please open an issue on GitHub.
 
 ---
 
-Built with ❤️ using Next.js, TypeScript, and Supabase
+Built with ❤️ using Next.js, TypeScript, and Firebase

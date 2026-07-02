@@ -5,6 +5,7 @@
 'use client';
 
 import { useState } from 'react';
+import { CheckCircle2, Check } from 'lucide-react';
 
 interface SuccessDialogProps {
   url: string;
@@ -28,7 +29,9 @@ export function SuccessDialog({ url, onClose }: SuccessDialogProps) {
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-gray-200 dark:border-gray-700">
         <div className="text-center mb-6">
-          <div className="text-5xl mb-3">✓</div>
+          <div className="flex justify-center mb-4">
+            <CheckCircle2 className="w-16 h-16 text-green-500" />
+          </div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
             Note Saved!
           </h2>
@@ -52,9 +55,9 @@ export function SuccessDialog({ url, onClose }: SuccessDialogProps) {
               />
               <button
                 onClick={handleCopy}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg font-medium transition"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg font-medium transition flex items-center gap-2"
               >
-                {copied ? '✓ Copied' : 'Copy'}
+                {copied ? <><Check className="w-4 h-4" /> Copied</> : 'Copy'}
               </button>
             </div>
           </div>

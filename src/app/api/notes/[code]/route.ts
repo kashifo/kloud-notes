@@ -4,10 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceClient } from '@/lib/supabase';
-import { toPublicNote } from '@/lib/utils';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
+import { toPublicNoteFromFirestore } from '@/lib/utils';
 import { getClientIp, hashPassword, verifyPassword } from '@/lib/security';
-import { TABLES } from '@/lib/constants';
 import { fetchNoteRateLimit, checkRateLimit, createNoteRateLimit } from '@/lib/ratelimit';
 import { updateNoteSchema } from '@/lib/validation';
 import type { PublicNote, ErrorResponse } from '@/types/note';
@@ -50,24 +50,24 @@ export async function GET(
     }
 
     // Fetch note from database
-    const { data: note, error: fetchError } = await getServiceClient()
-      .from(TABLES.NOTES)
-      .select('*')
-      .eq('short_code', code)
-      .single();
+    const db = getAdminDb();
+    const docRef = db.collection('kloudNotes').doc(code);
+    const docSnap = await docRef.get();
 
-    if (fetchError || !note) {
+    if (!docSnap.exists) {
       return NextResponse.json(
         { error: 'Note not found' },
         { status: 404 }
       );
     }
 
+    const note = docSnap.data()!;
+
     // If note is password protected, don't return content
     if (note.password_hash) {
       return NextResponse.json(
         {
-          ...toPublicNote(note),
+          ...toPublicNoteFromFirestore(code, note),
           content: '', // Don't return content for password-protected notes
         },
         { status: 200 }
@@ -75,7 +75,7 @@ export async function GET(
     }
 
     // Return public note
-    return NextResponse.json(toPublicNote(note), { status: 200 });
+    return NextResponse.json(toPublicNoteFromFirestore(code, note), { status: 200 });
   } catch (error) {
     console.error('Unexpected error in GET /api/notes/[code]:', error);
     return NextResponse.json(
@@ -140,70 +140,70 @@ export async function PATCH(
 
     const { content, password, newPassword, removePassword } = validation.data;
 
-    // Fetch existing note
-    const { data: existingNote, error: fetchError } = await getServiceClient()
-      .from(TABLES.NOTES)
-      .select('*')
-      .eq('short_code', code)
-      .single();
+    const db = getAdminDb();
+    const noteRef = db.collection('kloudNotes').doc(code);
+    const signalRef = db.collection('kloudNoteSignals').doc(code);
 
-    if (fetchError || !existingNote) {
-      return NextResponse.json(
-        { error: 'Note not found' },
-        { status: 404 }
-      );
-    }
+    let updatedNote: any = null;
 
+    try {
+      const success = await db.runTransaction(async (transaction: any) => {
+        const doc = await transaction.get(noteRef);
+        if (!doc.exists) return false;
+        
+        const existingNote = doc.data()!;
 
+        if (existingNote.password_hash) {
+          if (!password) {
+            throw new Error('PASSWORD_REQUIRED');
+          }
+          const isValid = await verifyPassword(password, existingNote.password_hash);
+          if (!isValid) {
+            throw new Error('INVALID_PASSWORD');
+          }
+        }
 
-    // If note has password, verify it before allowing update
-    if (existingNote.password_hash) {
-      if (!password) {
-        return NextResponse.json(
-          { error: 'Password is required to update a protected note' },
-          { status: 401 }
-        );
+        let passwordHash = existingNote.password_hash;
+        if (removePassword) {
+          passwordHash = null;
+        } else if (newPassword) {
+          passwordHash = await hashPassword(newPassword);
+        } else if (password && !existingNote.password_hash) {
+          passwordHash = await hashPassword(password);
+        }
+
+        const updates = {
+          content,
+          password_hash: passwordHash,
+          updated_at: FieldValue.serverTimestamp(),
+        };
+        
+        transaction.update(noteRef, updates);
+        transaction.set(signalRef, { updated_at: FieldValue.serverTimestamp() }, { merge: true });
+
+        updatedNote = {
+          ...existingNote,
+          ...updates,
+          updated_at: { toDate: () => new Date() }, // mock timestamp for immediate response
+        };
+
+        return true;
+      });
+
+      if (!success) {
+        return NextResponse.json({ error: 'Note not found' }, { status: 404 });
       }
-      const isValid = await verifyPassword(password, existingNote.password_hash);
-      if (!isValid) {
-        return NextResponse.json(
-          { error: 'Invalid password' },
-          { status: 401 }
-        );
+    } catch (err: any) {
+      if (err.message === 'PASSWORD_REQUIRED') {
+        return NextResponse.json({ error: 'Password is required to update a protected note' }, { status: 401 });
       }
+      if (err.message === 'INVALID_PASSWORD') {
+        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+      }
+      throw err;
     }
 
-    // Update password if requested
-    let passwordHash = existingNote.password_hash;
-    if (removePassword) {
-      passwordHash = null;
-    } else if (newPassword) {
-      passwordHash = await hashPassword(newPassword);
-    } else if (password && !existingNote.password_hash) {
-      // Setting password for the first time
-      passwordHash = await hashPassword(password);
-    }
-
-    // Update note
-    const { data: updatedNote, error: updateError } = await getServiceClient()
-      .from(TABLES.NOTES)
-      .update({
-        content,
-        password_hash: passwordHash,
-      })
-      .eq('short_code', code)
-      .select()
-      .single();
-
-    if (updateError || !updatedNote) {
-      console.error('Database update error:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update note. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json(toPublicNote(updatedNote), { status: 200 });
+    return NextResponse.json(toPublicNoteFromFirestore(code, updatedNote), { status: 200 });
   } catch (error) {
     console.error('Unexpected error in PATCH /api/notes/[code]:', error);
     return NextResponse.json(

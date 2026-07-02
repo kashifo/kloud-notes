@@ -54,24 +54,19 @@ export function formatDate(dateString: string): string {
 }
 
 /**
- * Converts a note to public format (removes sensitive data)
- * @param note - The note from the database
- * @returns Public note object
+ * Converts a note to public format (removes sensitive data) from Firestore
  */
-export function toPublicNote(note: {
-  id: string;
-  short_code: string;
-  content: string;
-  password_hash: string | null;
-  created_at: string;
-  updated_at: string;
-}) {
+export function toPublicNoteFromFirestore(noteId: string, data: any) {
   return {
-    id: note.id,
-    short_code: note.short_code,
-    content: note.content,
-    has_password: !!note.password_hash,
-    created_at: note.created_at,
-    updated_at: note.updated_at,
+    id: noteId,
+    short_code: data.short_code,
+    content: data.content,
+    has_password: !!data.password_hash,
+    created_at: typeof data.created_at?.toDate === 'function' 
+      ? data.created_at.toDate().toISOString() 
+      : data.created_at,
+    updated_at: typeof data.updated_at?.toDate === 'function' 
+      ? data.updated_at.toDate().toISOString() 
+      : data.updated_at,
   };
 }

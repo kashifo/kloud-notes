@@ -6,7 +6,7 @@ Use this file before making changes. Keep `README.md` for setup and usage, `INIT
 
 ## Product
 
-Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Supabase. Users can create a note without login, share it by short code, and optionally protect it with a password.
+Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Firebase. Users can create a note without login, share it by short code, and optionally protect it with a password.
 
 ## Stack
 
@@ -14,7 +14,7 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Supabase.
 - React 19
 - TypeScript
 - Tailwind CSS 4
-- Supabase Postgres with RLS
+- Firebase Firestore
 - Zod for validation
 - bcryptjs for password hashing
 - nanoid for code generation
@@ -32,7 +32,8 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Supabase.
 
 ## Core Libraries
 
-- `src/lib/supabase.ts` wraps the public Supabase client and service-role client.
+- `src/lib/firebase-client.ts` wraps the public Firebase client for Realtime Document listeners.
+- `src/lib/firebase-admin.ts` wraps the admin SDK for database access.
 - `src/lib/validation.ts` owns request validation.
 - `src/lib/security.ts` owns hashing, verification, sanitizing, and IP extraction.
 - `src/lib/utils.ts` owns short-code generation, URLs, formatting, and public note shaping.
@@ -41,7 +42,7 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Supabase.
 
 ## Data Model
 
-`notes` contains:
+`kloudNotes` contains:
 
 - `id`
 - `short_code`
@@ -50,22 +51,22 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Supabase.
 - `created_at`
 - `updated_at`
 
-The migration enforces RLS, but all API routes bypass it using the service-role key to securely mediate access.
+The Firebase Security Rules enforce strict access, but all API routes bypass it using the Firebase Admin SDK to securely mediate access.
 
 ## Main Flow
 
 1. User opens `/`.
 2. The user enters note content, optionally a password, and optionally a custom short code.
-3. The note is saved to Supabase via API route using a server-generated code or the custom code.
+3. The note is saved to Firestore via API route using a server-generated code or the custom code.
 4. The URL updates to `/<code>`.
 5. Visiting `/<code>` loads the note server-side or client-side.
 6. If password protected, the user must unlock it before reading. Anyone with the link (and the password, if set) can edit or change the password.
-7. Active viewers subscribe to a Supabase Realtime Broadcast channel (`note_<code>`). When edits are made, clients broadcast a ping and receive instant alerts to reload for changes.
+7. Active viewers subscribe to a Firestore snapshot listener (`kloudNoteSignals/{code}`). When edits are made, clients receive instant alerts to reload for changes.
 
 ## Working Conventions
 
 - Keep the server/client split intact.
-- Never expose the service-role key to the browser.
+- Never expose the Firebase private key or Admin SDK to the browser.
 - Store password hashes, not plaintext passwords.
 - Validate all request bodies with Zod.
 - Keep the UI responsive and mobile-first.
@@ -73,9 +74,13 @@ The migration enforces RLS, but all API routes bypass it using the service-role 
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
 - `NEXT_PUBLIC_APP_URL`
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`

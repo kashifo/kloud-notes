@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /kloudNotes/{code} {
+      allow read, write: if false;
+    }
+
+    match /kloudNoteSignals/{code} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if false;
+    }
+  }
+}

@@ -4,11 +4,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceClient } from '@/lib/supabase';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { createNoteSchema } from '@/lib/validation';
 import { hashPassword, getClientIp } from '@/lib/security';
 import { generateShortCode, generateNoteUrl } from '@/lib/utils';
-import { SHORT_CODE, TABLES } from '@/lib/constants';
+import { SHORT_CODE } from '@/lib/constants';
 import { createNoteRateLimit, checkRateLimit } from '@/lib/ratelimit';
 import type { CreateNoteResponse, ErrorResponse } from '@/types/note';
 
@@ -52,85 +53,96 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
 
     const { content, password, customCode } = validation.data;
 
-    // Generate or use custom short code
-    let shortCode = customCode;
+    const db = getAdminDb();
+    let finalShortCode = '';
     let attempts = 0;
 
-    if (!shortCode) {
-      // Generate a unique short code
+    const passwordHash = password ? await hashPassword(password) : null;
+
+    if (customCode) {
+      finalShortCode = customCode;
+      const success = await db.runTransaction(async (transaction: any) => {
+        const noteRef = db.collection('kloudNotes').doc(finalShortCode);
+        const noteDoc = await transaction.get(noteRef);
+
+        if (noteDoc.exists) {
+          return false;
+        }
+
+        const signalRef = db.collection('kloudNoteSignals').doc(finalShortCode);
+        
+        transaction.set(noteRef, {
+          short_code: finalShortCode,
+          content,
+          password_hash: passwordHash,
+          created_at: FieldValue.serverTimestamp(),
+          updated_at: FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(signalRef, {
+          updated_at: FieldValue.serverTimestamp(),
+        });
+
+        return true;
+      });
+
+      if (!success) {
+        return NextResponse.json(
+          { error: 'This custom code is already in use. Please choose another.' },
+          { status: 409 }
+        );
+      }
+    } else {
       while (attempts < SHORT_CODE.GENERATION_ATTEMPTS) {
-        shortCode = generateShortCode();
+        const candidateCode = generateShortCode();
+        
+        const success = await db.runTransaction(async (transaction: any) => {
+          const noteRef = db.collection('kloudNotes').doc(candidateCode);
+          const doc = await transaction.get(noteRef);
+          
+          if (doc.exists) {
+            return false;
+          }
 
-        // Check if code already exists
-        const { data: existing } = await getServiceClient()
-          .from(TABLES.NOTES)
-          .select('id')
-          .eq('short_code', shortCode)
-          .single();
+          const signalRef = db.collection('kloudNoteSignals').doc(candidateCode);
+          
+          transaction.set(noteRef, {
+            short_code: candidateCode,
+            content,
+            password_hash: passwordHash,
+            created_at: FieldValue.serverTimestamp(),
+            updated_at: FieldValue.serverTimestamp(),
+          });
 
-        if (!existing) break;
+          transaction.set(signalRef, {
+            updated_at: FieldValue.serverTimestamp(),
+          });
+
+          return true;
+        });
+
+        if (success) {
+          finalShortCode = candidateCode;
+          break;
+        }
+        
         attempts++;
       }
 
-      if (attempts >= SHORT_CODE.GENERATION_ATTEMPTS) {
+      if (!finalShortCode) {
         return NextResponse.json(
           { error: 'Failed to generate unique short code. Please try again.' },
           { status: 500 }
         );
       }
-    } else {
-      // Check if custom code is available
-      const { data: existing } = await getServiceClient()
-        .from(TABLES.NOTES)
-        .select('id')
-        .eq('short_code', shortCode)
-        .single();
-
-      if (existing) {
-        return NextResponse.json(
-          { error: 'This custom code is already in use. Please choose another.' },
-          { status: 409 }
-        );
-      }
-    }
-
-    // Hash password if provided
-    const passwordHash = password ? await hashPassword(password) : null;
-
-    // Insert note into database
-    const { data: note, error: insertError } = await getServiceClient()
-      .from(TABLES.NOTES)
-      .insert({
-        short_code: shortCode!,
-        content,
-        password_hash: passwordHash,
-      })
-      .select()
-      .single();
-
-    if (insertError || !note) {
-      console.error('Database insert error:', insertError);
-      
-      // Handle unique constraint violation (Postgres error code 23505)
-      if (insertError?.code === '23505') {
-        return NextResponse.json(
-          { error: 'This custom code is already in use. Please choose another.' },
-          { status: 409 }
-        );
-      }
-
-      return NextResponse.json(
-        { error: 'Failed to create note. Please try again.' },
-        { status: 500 }
-      );
     }
 
     // Generate URL and return response
-    const url = generateNoteUrl(note.short_code);
+    const url = generateNoteUrl(finalShortCode);
 
     return NextResponse.json(
       {
-        shortCode: note.short_code,
+        shortCode: finalShortCode,
         url,
       },
       { status: 201 }

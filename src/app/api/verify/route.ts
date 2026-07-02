@@ -4,11 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceClient } from '@/lib/supabase';
+import { getAdminDb } from '@/lib/firebase-admin';
 import { verifyPasswordSchema } from '@/lib/validation';
 import { verifyPassword, getClientIp } from '@/lib/security';
-import { toPublicNote } from '@/lib/utils';
-import { TABLES } from '@/lib/constants';
+import { toPublicNoteFromFirestore } from '@/lib/utils';
 import { verifyPasswordRateLimit, checkRateLimit } from '@/lib/ratelimit';
 import type { VerifyPasswordResponse, ErrorResponse } from '@/types/note';
 
@@ -55,18 +54,18 @@ export async function POST(
     const { shortCode, password } = validation.data;
 
     // Fetch note from database
-    const { data: note, error: fetchError } = await getServiceClient()
-      .from(TABLES.NOTES)
-      .select('*')
-      .eq('short_code', shortCode)
-      .single();
+    const db = getAdminDb();
+    const docRef = db.collection('kloudNotes').doc(shortCode);
+    const docSnap = await docRef.get();
 
-    if (fetchError || !note) {
+    if (!docSnap.exists) {
       return NextResponse.json(
         { error: 'Note not found' },
         { status: 404 }
       );
     }
+
+    const note = docSnap.data()!;
 
     // Check if note has password protection
     if (!note.password_hash) {
@@ -93,7 +92,7 @@ export async function POST(
     return NextResponse.json(
       {
         valid: true,
-        note: toPublicNote(note),
+        note: toPublicNoteFromFirestore(shortCode, note),
       },
       { status: 200 }
     );
