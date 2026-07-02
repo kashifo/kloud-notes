@@ -23,7 +23,7 @@ A secure, cloud-based notepad web application built with Next.js, TypeScript, an
 
 ## Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 18+ and pnpm (or corepack enable)
 - A Supabase account ([sign up here](https://supabase.com))
 - Optional: Upstash Redis account for production rate limiting
 
@@ -39,7 +39,7 @@ cd kloud-notes
 ### 2. Install Dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 3. Set Up Supabase
@@ -58,8 +58,7 @@ npm install
 This will:
 - Create the `notes` table
 - Add necessary indexes
-- Enable Row Level Security (RLS)
-- Set up RLS policies for public read/write
+- Enable Row Level Security (RLS) to strictly deny public access
 
 ### 4. Configure Environment Variables
 
@@ -88,7 +87,7 @@ UPSTASH_REDIS_REST_TOKEN=
 ### 5. Run the Development Server
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to see the application.
@@ -112,7 +111,7 @@ kloud-notes/
 │   │   ├── page.tsx         # Home page (create note)
 │   │   └── globals.css
 │   ├── components/
-│   │   ├── NoteEditor.tsx   # Note creation form
+│   │   ├── NoteEditorClient.tsx   # Unified note creation/editing form
 │   │   ├── PasswordDialog.tsx
 │   │   └── Spinner.tsx
 │   ├── lib/
@@ -255,24 +254,31 @@ For production-grade rate limiting across multiple instances:
 ### Build for Production
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ### Run Production Build
 
 ```bash
-npm start
+pnpm start
 ```
 
 ### Lint
 
 ```bash
-npm run lint
+pnpm lint
 ```
+
+## TESTING
+  1. Run pnpm build and pnpm lint.
+  2. Test with a real Supabase project using the current migration.
+  3. Verify create, open by link, edit, password lock/unlock, change password, remove password.
+  4. Test two browsers/devices for the realtime reload banner.
+  5. Confirm Vercel env vars are set, especially SUPABASE_SERVICE_ROLE_KEY.
+  6. Decide whether Upstash is required for production-grade rate limiting
 
 ## Future Enhancements
 
-- [ ] Note editing (for creator only)
 - [ ] Note expiration (auto-delete after X days)
 - [ ] Note view analytics
 - [ ] Rich text editor
@@ -305,8 +311,8 @@ npm run lint
 ### Build Errors
 
 - Clear `.next` folder: `rm -rf .next`
-- Reinstall dependencies: `rm -rf node_modules && npm install`
-- Check TypeScript errors: `npm run build`
+- Reinstall dependencies: `rm -rf node_modules && pnpm install`
+- Check TypeScript errors: `pnpm build`
 
 ## Contributing
 

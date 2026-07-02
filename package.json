@@ -2,11 +2,12 @@
   "name": "kloud-notes",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",
@@ -14,9 +15,9 @@
     "@upstash/redis": "^1.35.6",
     "bcryptjs": "^3.0.3",
     "nanoid": "^5.1.6",
-    "next": "15.3.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "next": "^15.5.18",
+    "react": "^19.0.6",
+    "react-dom": "^19.0.6",
     "zod": "^4.1.12"
   },
   "devDependencies": {

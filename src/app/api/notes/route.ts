@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getServiceClient } from '@/lib/supabase';
 import { createNoteSchema } from '@/lib/validation';
 import { hashPassword, getClientIp } from '@/lib/security';
 import { generateShortCode, generateNoteUrl } from '@/lib/utils';
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
         shortCode = generateShortCode();
 
         // Check if code already exists
-        const { data: existing } = await supabase
+        const { data: existing } = await getServiceClient()
           .from(TABLES.NOTES)
           .select('id')
           .eq('short_code', shortCode)
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
       }
     } else {
       // Check if custom code is available
-      const { data: existing } = await supabase
+      const { data: existing } = await getServiceClient()
         .from(TABLES.NOTES)
         .select('id')
         .eq('short_code', shortCode)
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
     const passwordHash = password ? await hashPassword(password) : null;
 
     // Insert note into database
-    const { data: note, error: insertError } = await supabase
+    const { data: note, error: insertError } = await getServiceClient()
       .from(TABLES.NOTES)
       .insert({
         short_code: shortCode!,
@@ -110,6 +110,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
 
     if (insertError || !note) {
       console.error('Database insert error:', insertError);
+      
+      // Handle unique constraint violation (Postgres error code 23505)
+      if (insertError?.code === '23505') {
+        return NextResponse.json(
+          { error: 'This custom code is already in use. Please choose another.' },
+          { status: 409 }
+        );
+      }
+
       return NextResponse.json(
         { error: 'Failed to create note. Please try again.' },
         { status: 500 }

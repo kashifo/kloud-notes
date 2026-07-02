@@ -18,15 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
 ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies
--- Policy: Allow anyone to insert notes
-CREATE POLICY "Allow public insert" ON notes
-    FOR INSERT
-    WITH CHECK (true);
-
--- Policy: Allow anyone to select notes
-CREATE POLICY "Allow public select" ON notes
-    FOR SELECT
-    USING (true);
+-- We do not create any public policies. All access should be mediated through API routes using the service role key.
 
 -- Optional: Create function to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

@@ -91,14 +91,4 @@ export async function checkRateLimit(
   return { success: true, remaining: limit - cached.count };
 }
 
-/**
- * Clean up expired entries from in-memory cache
- */
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of inMemoryCache.entries()) {
-    if (now > value.resetAt) {
-      inMemoryCache.delete(key);
-    }
-  }
-}, 60000); // Clean up every minute
+

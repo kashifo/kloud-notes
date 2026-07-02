@@ -1,5 +1,5 @@
-import NotePageClient from './NotePageClient';
-import { supabase } from '@/lib/supabase';
+import { NoteEditorClient } from '@/components/NoteEditorClient';
+import { getServiceClient } from '@/lib/supabase';
 import { TABLES } from '@/lib/constants';
 import { notFound } from 'next/navigation';
 
@@ -7,7 +7,7 @@ export default async function NotePage({ params }: { params: Promise<{ code: str
   const { code } = await params;
 
   // Server-side fetch
-  const { data: note, error } = await supabase
+  const { data: note, error } = await getServiceClient()
     .from(TABLES.NOTES)
     .select('*')
     .eq('short_code', code)
@@ -26,5 +26,5 @@ export default async function NotePage({ params }: { params: Promise<{ code: str
     updated_at: note.updated_at,
   };
 
-  return <NotePageClient initialNote={publicNote} code={code} />;
+  return <NoteEditorClient mode="edit" code={code} initialNote={publicNote} />;
 }

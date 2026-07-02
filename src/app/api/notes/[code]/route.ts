@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getServiceClient } from '@/lib/supabase';
 import { toPublicNote } from '@/lib/utils';
 import { getClientIp, hashPassword, verifyPassword } from '@/lib/security';
 import { TABLES } from '@/lib/constants';
@@ -50,7 +50,7 @@ export async function GET(
     }
 
     // Fetch note from database
-    const { data: note, error: fetchError } = await supabase
+    const { data: note, error: fetchError } = await getServiceClient()
       .from(TABLES.NOTES)
       .select('*')
       .eq('short_code', code)
@@ -138,10 +138,10 @@ export async function PATCH(
       );
     }
 
-    const { content, password } = validation.data;
+    const { content, password, newPassword, removePassword } = validation.data;
 
     // Fetch existing note
-    const { data: existingNote, error: fetchError } = await supabase
+    const { data: existingNote, error: fetchError } = await getServiceClient()
       .from(TABLES.NOTES)
       .select('*')
       .eq('short_code', code)
@@ -154,8 +154,16 @@ export async function PATCH(
       );
     }
 
+
+
     // If note has password, verify it before allowing update
-    if (existingNote.password_hash && password) {
+    if (existingNote.password_hash) {
+      if (!password) {
+        return NextResponse.json(
+          { error: 'Password is required to update a protected note' },
+          { status: 401 }
+        );
+      }
       const isValid = await verifyPassword(password, existingNote.password_hash);
       if (!isValid) {
         return NextResponse.json(
@@ -165,13 +173,19 @@ export async function PATCH(
       }
     }
 
-    // Hash new password if provided
-    const passwordHash = password && !existingNote.password_hash
-      ? await hashPassword(password)
-      : existingNote.password_hash;
+    // Update password if requested
+    let passwordHash = existingNote.password_hash;
+    if (removePassword) {
+      passwordHash = null;
+    } else if (newPassword) {
+      passwordHash = await hashPassword(newPassword);
+    } else if (password && !existingNote.password_hash) {
+      // Setting password for the first time
+      passwordHash = await hashPassword(password);
+    }
 
     // Update note
-    const { data: updatedNote, error: updateError } = await supabase
+    const { data: updatedNote, error: updateError } = await getServiceClient()
       .from(TABLES.NOTES)
       .update({
         content,

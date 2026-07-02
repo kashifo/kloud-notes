@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getServiceClient } from '@/lib/supabase';
 import { verifyPasswordSchema } from '@/lib/validation';
 import { verifyPassword, getClientIp } from '@/lib/security';
 import { toPublicNote } from '@/lib/utils';
@@ -55,7 +55,7 @@ export async function POST(
     const { shortCode, password } = validation.data;
 
     // Fetch note from database
-    const { data: note, error: fetchError } = await supabase
+    const { data: note, error: fetchError } = await getServiceClient()
       .from(TABLES.NOTES)
       .select('*')
       .eq('short_code', shortCode)

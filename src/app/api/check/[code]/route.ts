@@ -3,8 +3,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-import { TABLES } from '@/lib/constants';
+import { getServiceClient } from '@/lib/supabase';
+import { TABLES, SHORT_CODE } from '@/lib/constants';
+import { getClientIp } from '@/lib/security';
+import { fetchNoteRateLimit, checkRateLimit } from '@/lib/ratelimit';
 
 /**
  * GET handler to check if a short code is available
@@ -16,15 +18,29 @@ export async function GET(
   try {
     const { code } = await params;
 
-    if (!code || code.trim() === '') {
+    if (!code || code.length < SHORT_CODE.MIN_LENGTH || !/^[a-zA-Z0-9_-]+$/.test(code)) {
       return NextResponse.json(
-        { available: false, error: 'Code is required' },
+        { available: false, error: 'Invalid code format' },
         { status: 400 }
       );
     }
 
+    // Rate limiting
+    const clientIp = getClientIp(request.headers);
+    if (fetchNoteRateLimit) {
+      const { success } = await fetchNoteRateLimit.limit(clientIp);
+      if (!success) {
+        return NextResponse.json({ available: false, error: 'Too many requests' }, { status: 429 });
+      }
+    } else {
+      const { success } = await checkRateLimit(clientIp, 30, 60000);
+      if (!success) {
+        return NextResponse.json({ available: false, error: 'Too many requests' }, { status: 429 });
+      }
+    }
+
     // Check if code exists in database
-    const { data, error } = await supabase
+    const { data, error } = await getServiceClient()
       .from(TABLES.NOTES)
       .select('short_code')
       .eq('short_code', code)

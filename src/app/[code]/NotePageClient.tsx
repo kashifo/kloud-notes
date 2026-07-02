@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, FormEvent, useEffect } from 'react';
+import { useState, FormEvent, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
 import { Spinner } from '@/components/Spinner';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PasswordDialog } from '@/components/PasswordDialog';
@@ -22,14 +23,17 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [noteUrl, setNoteUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const [hasServerChanges, setHasServerChanges] = useState(false);
 
   // Password protection
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [hasPassword, setHasPassword] = useState(initialNote.has_password);
   const [passwordDialogMode, setPasswordDialogMode] = useState<'set' | 'verify'>('verify');
+  const [newPassword, setNewPassword] = useState('');
+  const [removedPasswordFlag, setRemovedPasswordFlag] = useState(false);
+  const [hasPassword, setHasPassword] = useState(initialNote.has_password);
 
   const [note, setNote] = useState<PublicNote>(initialNote);
 
@@ -42,6 +46,30 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
       setShowPasswordDialog(true);
     }
   }, [initialNote]);
+
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Realtime updates via Supabase Broadcast
+  useEffect(() => {
+    const channel = supabase.channel(`note_${code}`);
+    channelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'note_updated' }, (payload) => {
+        if (payload.payload?.updated_at) {
+          const serverDate = new Date(payload.payload.updated_at);
+          const localDate = new Date(note.updated_at);
+          if (serverDate > localDate) {
+            setHasServerChanges(true);
+          }
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [code, note.updated_at]);
 
   const handlePasswordSubmit = async (pwd: string) => {
     if (passwordDialogMode === 'verify') {
@@ -82,9 +110,14 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
       }
     } else {
       // Setting new password
-      setPassword(pwd);
+      if (initialNote.has_password && password) {
+        setNewPassword(pwd);
+      } else {
+        setPassword(pwd);
+      }
       setHasPassword(true);
       setShowPasswordDialog(false);
+      setRemovedPasswordFlag(false);
     }
   };
 
@@ -108,6 +141,8 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
         body: JSON.stringify({
           content: content.trim(),
           password: password || undefined,
+          newPassword: newPassword || undefined,
+          removePassword: removedPasswordFlag || undefined,
         }),
       });
 
@@ -119,9 +154,27 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
 
       if ('content' in data) {
         setNote(data);
+        if (removedPasswordFlag) {
+          setPassword('');
+          setNewPassword('');
+          setRemovedPasswordFlag(false);
+        } else if (newPassword) {
+          setPassword(newPassword);
+          setNewPassword('');
+        }
+        setHasServerChanges(false);
         const url = `${appUrl}/${code}`;
         setNoteUrl(url);
         setShowSuccessDialog(true);
+        
+        // Broadcast the update to other clients
+        if (channelRef.current) {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'note_updated',
+            payload: { updated_at: data.updated_at },
+          }).catch(console.error);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
@@ -154,7 +207,8 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
   };
 
   const handlePasswordRemove = async () => {
-    setPassword('');
+    setRemovedPasswordFlag(true);
+    setNewPassword('');
     setHasPassword(false);
     setShowPasswordDialog(false);
   };
@@ -218,6 +272,20 @@ export default function NotePageClient({ initialNote, code }: NotePageClientProp
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-hidden">
+          {hasServerChanges && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 flex justify-between items-center rounded-lg mb-4 border border-yellow-200 dark:border-yellow-800">
+              <span className="text-sm text-yellow-800 dark:text-yellow-200">
+                This note has been updated remotely by someone else.
+              </span>
+              <button 
+                onClick={() => window.location.reload()}
+                className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Reload to view changes
+              </button>
+            </div>
+          )}
+          
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 overflow-hidden">
             {/* Custom Link (Read-only) and Save Button */}
             <div className="flex flex-col sm:flex-row sm:items-end gap-3 justify-end">

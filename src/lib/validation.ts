@@ -26,7 +26,7 @@ export const createNoteSchema = z.object({
 
   customCode: z
     .string()
-    .min(3, 'Custom code must be at least 3 characters')
+    .min(SHORT_CODE.MIN_LENGTH, `Custom code must be at least ${SHORT_CODE.MIN_LENGTH} characters`)
     .max(SHORT_CODE.CUSTOM_MAX_LENGTH, `Custom code cannot exceed ${SHORT_CODE.CUSTOM_MAX_LENGTH} characters`)
     .regex(/^[a-zA-Z0-9_-]+$/, 'Custom code can only contain letters, numbers, hyphens, and underscores')
     .optional(),
@@ -72,6 +72,14 @@ export const updateNoteSchema = z.object({
     .min(PASSWORD.MIN_LENGTH, `Password must be at least ${PASSWORD.MIN_LENGTH} characters`)
     .max(PASSWORD.MAX_LENGTH, `Password cannot exceed ${PASSWORD.MAX_LENGTH} characters`)
     .optional(),
+    
+  newPassword: z
+    .string()
+    .min(PASSWORD.MIN_LENGTH, `Password must be at least ${PASSWORD.MIN_LENGTH} characters`)
+    .max(PASSWORD.MAX_LENGTH, `Password cannot exceed ${PASSWORD.MAX_LENGTH} characters`)
+    .optional(),
+
+  removePassword: z.boolean().optional(),
 });
 
 /**
