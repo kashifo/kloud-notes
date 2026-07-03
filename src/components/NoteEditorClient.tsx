@@ -11,7 +11,7 @@ import { PasswordDialog } from '@/components/PasswordDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
 import { formatDate } from '@/lib/utils';
 import { APP_URL } from '@/lib/constants';
-import { FilePlus, Lock, Unlock, Link as LinkIcon, Check, Clock, Edit2, Copy, X } from 'lucide-react';
+import { FilePlus, Lock, Unlock, Check, Clock, Edit2, Copy, X } from 'lucide-react';
 import type { PublicNote, ErrorResponse, VerifyPasswordResponse, CreateNoteResponse } from '@/types/note';
 
 type NoteEditorMode = 'create' | 'edit';
@@ -434,6 +434,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     return () => {
       if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, lastSavedContent, mode, code, hasServerChanges, passwordChangeTrigger]);
 
   const handleCopyLink = async () => {
