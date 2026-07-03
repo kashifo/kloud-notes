@@ -30,6 +30,7 @@ export const createNoteRateLimit = redis
         RATE_LIMIT.CREATE_NOTE.window
       ),
       analytics: true,
+      prefix: '@upstash/ratelimit:create',
     })
   : null;
 
@@ -44,6 +45,22 @@ export const verifyPasswordRateLimit = redis
         RATE_LIMIT.VERIFY_PASSWORD.window
       ),
       analytics: true,
+      prefix: '@upstash/ratelimit:verify',
+    })
+  : null;
+
+/**
+ * Rate limiter for note updates (auto-saving)
+ */
+export const updateNoteRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(
+        RATE_LIMIT.UPDATE_NOTE.requests,
+        RATE_LIMIT.UPDATE_NOTE.window
+      ),
+      analytics: true,
+      prefix: '@upstash/ratelimit:update',
     })
   : null;
 
@@ -58,6 +75,22 @@ export const fetchNoteRateLimit = redis
         RATE_LIMIT.FETCH_NOTE.window
       ),
       analytics: true,
+      prefix: '@upstash/ratelimit:fetch',
+    })
+  : null;
+
+/**
+ * Rate limiter for custom-code availability checks
+ */
+export const checkCodeRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(
+        RATE_LIMIT.CHECK_CODE.requests,
+        RATE_LIMIT.CHECK_CODE.window
+      ),
+      analytics: true,
+      prefix: '@upstash/ratelimit:check',
     })
   : null;
 
@@ -69,14 +102,16 @@ const inMemoryCache = new Map<string, { count: number; resetAt: number }>();
 
 export async function checkRateLimit(
   identifier: string,
+  action: string,
   limit: number,
   windowMs: number
 ): Promise<{ success: boolean; remaining?: number }> {
   const now = Date.now();
-  const cached = inMemoryCache.get(identifier);
+  const cacheKey = `${identifier}_${action}`;
+  const cached = inMemoryCache.get(cacheKey);
 
   if (!cached || now > cached.resetAt) {
-    inMemoryCache.set(identifier, {
+    inMemoryCache.set(cacheKey, {
       count: 1,
       resetAt: now + windowMs,
     });

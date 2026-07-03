@@ -28,7 +28,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
       }
     } else {
       // Fallback to in-memory rate limiting
-      const { success } = await checkRateLimit(clientIp, 5, 60000);
+      const { success } = await checkRateLimit(clientIp, 'create', 5, 60000);
       if (!success) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
       );
     }
 
-    const { content, password, customCode } = validation.data;
+    const { content, password, customCode, clientId } = validation.data;
 
     const db = getAdminDb();
     let finalShortCode = '';
@@ -81,6 +81,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
 
         transaction.set(signalRef, {
           updated_at: FieldValue.serverTimestamp(),
+          updated_by: clientId ?? null,
         });
 
         return true;
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
 
           transaction.set(signalRef, {
             updated_at: FieldValue.serverTimestamp(),
+            updated_by: clientId ?? null,
           });
 
           return true;

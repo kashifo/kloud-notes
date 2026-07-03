@@ -2,7 +2,7 @@
 
 This is the single source of truth for project context and implementation understanding.
 
-Use this file before making changes. Keep `README.md` for setup and usage, `INITITAL_PLAN.md` as the archived initial plan, and `FINDINGS.md` for review notes.
+Use this file before making changes. Keep `README.md` for setup and usage, `docs/INITITAL_PLAN.md` as the archived initial plan, and `docs/FINDINGS.md` for review notes.
 
 ## Product
 
@@ -51,17 +51,22 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Firebase.
 - `created_at`
 - `updated_at`
 
+`kloudNoteSignals` contains:
+
+- `updated_at`
+- `updated_by`
+
 The Firebase Security Rules enforce strict access, but all API routes bypass it using the Firebase Admin SDK to securely mediate access.
 
 ## Main Flow
 
 1. User opens `/`.
-2. The user enters note content, optionally a password, and optionally a custom short code.
-3. The note is saved to Firestore via API route using a server-generated code or the custom code.
-4. The URL updates to `/<code>`.
-5. Visiting `/<code>` loads the note server-side or client-side.
-6. If password protected, the user must unlock it before reading. Anyone with the link (and the password, if set) can edit or change the password.
-7. Active viewers subscribe to a Firestore snapshot listener (`kloudNoteSignals/{code}`). When edits are made, clients receive instant alerts to reload for changes.
+2. The server instantly generates a random short code and redirects the user to `/[code]`.
+3. If the note doesn't exist in the database, `/[code]` renders a "Ghost Draft" editor in create mode.
+4. If the user closes the tab without typing, the ghost draft is safely discarded.
+5. If the user enters content, the 1.5-second auto-save fires a `POST` request to create the note at that URL. The client seamlessly upgrades to `edit` mode (attaching realtime listeners) without a page reload.
+6. The user can optionally edit the URL via a dedicated UI or set a password.
+7. If password protected, anyone visiting the link must unlock it before reading. Active viewers subscribe to a Firestore snapshot listener (`kloudNoteSignals/{code}`). Save requests include a browser-scoped `clientId`, and signal docs store it as `updated_by` so clients can ignore their own saves and immediately alert on edits from another device or tab.
 
 ## Working Conventions
 
@@ -89,4 +94,4 @@ The Firebase Security Rules enforce strict access, but all API routes bypass it 
 
 - `PROJECT_CONTEXT.md` is the working reference and source of truth for project context and understanding.
 - `AGENTS.md` points to this file for agent behavior.
-- `INITITAL_PLAN.md` is the archived initial plan and should not be treated as the source of truth.
+- `docs/INITITAL_PLAN.md` is the archived initial plan and should not be treated as the source of truth.

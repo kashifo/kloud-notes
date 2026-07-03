@@ -28,7 +28,7 @@ export async function POST(
       }
     } else {
       // Fallback to in-memory rate limiting
-      const { success } = await checkRateLimit(clientIp, 10, 60000);
+      const { success } = await checkRateLimit(clientIp, 'verify', 10, 60000);
       if (!success) {
         return NextResponse.json(
           { error: 'Too many password attempts. Please try again later.' },

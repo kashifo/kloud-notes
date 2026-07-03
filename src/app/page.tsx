@@ -1,5 +1,8 @@
-import { NoteEditorClient } from '@/components/NoteEditorClient';
+import { redirect } from 'next/navigation';
+
+export const dynamic = 'force-dynamic';
 
 export default function Home() {
-  return <NoteEditorClient mode="create" />;
+  const randomCode = Math.random().toString(36).substring(2, 10);
+  redirect(`/${randomCode}`);
 }

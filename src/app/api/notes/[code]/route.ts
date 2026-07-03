@@ -8,9 +8,11 @@ import { getAdminDb } from '@/lib/firebase-admin';
 import { FieldValue, Transaction, DocumentData } from 'firebase-admin/firestore';
 import { toPublicNoteFromFirestore, RawNoteData } from '@/lib/utils';
 import { getClientIp, hashPassword, verifyPassword } from '@/lib/security';
-import { fetchNoteRateLimit, checkRateLimit, createNoteRateLimit } from '@/lib/ratelimit';
+import { fetchNoteRateLimit, checkRateLimit, updateNoteRateLimit } from '@/lib/ratelimit';
 import { updateNoteSchema } from '@/lib/validation';
 import type { PublicNote, ErrorResponse } from '@/types/note';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: NextRequest,
@@ -30,7 +32,7 @@ export async function GET(
       }
     } else {
       // Fallback to in-memory rate limiting
-      const { success } = await checkRateLimit(clientIp, 30, 60000);
+      const { success } = await checkRateLimit(clientIp, 'fetch', 30, 60000);
       if (!success) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
@@ -97,8 +99,8 @@ export async function PATCH(
     // Rate limiting
     const clientIp = getClientIp(request.headers);
 
-    if (createNoteRateLimit) {
-      const { success, remaining } = await createNoteRateLimit.limit(clientIp);
+    if (updateNoteRateLimit) {
+      const { success, remaining } = await updateNoteRateLimit.limit(clientIp);
       if (!success) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
@@ -106,7 +108,7 @@ export async function PATCH(
         );
       }
     } else {
-      const { success } = await checkRateLimit(clientIp, 5, 60000);
+      const { success } = await checkRateLimit(clientIp, 'update', 60, 60000);
       if (!success) {
         return NextResponse.json(
           { error: 'Too many requests. Please try again later.' },
@@ -138,7 +140,7 @@ export async function PATCH(
       );
     }
 
-    const { content, password, newPassword, removePassword } = validation.data;
+    const { content, password, newPassword, removePassword, newCode, clientId } = validation.data;
 
     const db = getAdminDb();
     const noteRef = db.collection('kloudNotes').doc(code);
@@ -177,15 +179,54 @@ export async function PATCH(
           password_hash: passwordHash,
           updated_at: FieldValue.serverTimestamp(),
         };
-        
-        transaction.update(noteRef, updates);
-        transaction.set(signalRef, { updated_at: FieldValue.serverTimestamp() }, { merge: true });
 
-        updatedNote = {
-          ...existingNote,
-          ...updates,
-          updated_at: { toDate: () => new Date() }, // mock timestamp for immediate response
-        };
+        if (newCode && newCode !== code) {
+          // Verify new code is not taken
+          const newNoteRef = db.collection('kloudNotes').doc(newCode);
+          const newNoteDoc = await transaction.get(newNoteRef);
+          
+          if (newNoteDoc.exists) {
+            throw new Error('CODE_ALREADY_EXISTS');
+          }
+
+          const newSignalRef = db.collection('kloudNoteSignals').doc(newCode);
+          
+          // Create new documents with updated values
+          transaction.set(newNoteRef, {
+            ...existingNote,
+            ...updates,
+            short_code: newCode,
+          });
+          
+          transaction.set(newSignalRef, {
+            updated_at: FieldValue.serverTimestamp(),
+            updated_by: clientId ?? null,
+          }, { merge: true });
+
+          // Delete old documents
+          transaction.delete(noteRef);
+          transaction.delete(signalRef);
+
+          updatedNote = {
+            ...existingNote,
+            ...updates,
+            short_code: newCode,
+            updated_at: { toDate: () => new Date() },
+          };
+        } else {
+          // Standard update
+          transaction.update(noteRef, updates);
+          transaction.set(signalRef, {
+            updated_at: FieldValue.serverTimestamp(),
+            updated_by: clientId ?? null,
+          }, { merge: true });
+
+          updatedNote = {
+            ...existingNote,
+            ...updates,
+            updated_at: { toDate: () => new Date() },
+          };
+        }
 
         return true;
       });
@@ -201,13 +242,16 @@ export async function PATCH(
         if (err.message === 'INVALID_PASSWORD') {
           return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
         }
+        if (err.message === 'CODE_ALREADY_EXISTS') {
+          return NextResponse.json({ error: 'This custom code is already in use. Please choose another.' }, { status: 409 });
+        }
       }
       throw err;
     }
 
-    return NextResponse.json(toPublicNoteFromFirestore(code, updatedNote! as RawNoteData), { status: 200 });
+    return NextResponse.json(toPublicNoteFromFirestore(updatedNote!.short_code, updatedNote! as RawNoteData), { status: 200 });
   } catch (error) {
-    console.error('Unexpected error in PATCH /api/notes/[code]:', error);
+    console.error('Unexpected error in PATCH route:', error);
     return NextResponse.json(
       { error: 'An unexpected error occurred. Please try again.' },
       { status: 500 }

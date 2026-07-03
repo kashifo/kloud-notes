@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
 import { SHORT_CODE } from '@/lib/constants';
 import { getClientIp } from '@/lib/security';
-import { fetchNoteRateLimit, checkRateLimit } from '@/lib/ratelimit';
+import { checkCodeRateLimit, checkRateLimit } from '@/lib/ratelimit';
 
 /**
  * GET handler to check if a short code is available
@@ -27,13 +27,13 @@ export async function GET(
 
     // Rate limiting
     const clientIp = getClientIp(request.headers);
-    if (fetchNoteRateLimit) {
-      const { success } = await fetchNoteRateLimit.limit(clientIp);
+    if (checkCodeRateLimit) {
+      const { success } = await checkCodeRateLimit.limit(clientIp);
       if (!success) {
         return NextResponse.json({ available: false, error: 'Too many requests' }, { status: 429 });
       }
     } else {
-      const { success } = await checkRateLimit(clientIp, 30, 60000);
+      const { success } = await checkRateLimit(clientIp, 'check', 30, 60000);
       if (!success) {
         return NextResponse.json({ available: false, error: 'Too many requests' }, { status: 429 });
       }

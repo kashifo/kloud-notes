@@ -4,8 +4,8 @@
 
 - Read `PROJECT_CONTEXT.md` before making changes.
 - Treat `PROJECT_CONTEXT.md` as the single source of truth for project context and understanding. Update it when you change code.
-- Treat `INITITAL_PLAN.md` as archived initial planning context only.
-- Use `FINDINGS.md` for known issues and review notes.
+- Treat `docs/INITITAL_PLAN.md` as archived initial planning context only.
+- Use `docs/FINDINGS.md` for known issues and review notes.
 - Keep docs aligned when behavior, file ownership, or environment variables change.
 - Always run `pnpm typecheck` before `pnpm build`.
 

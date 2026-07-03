@@ -41,9 +41,17 @@ export const RATE_LIMIT = {
     requests: 10,
     window: '1m' as const, // 10 requests per minute
   },
+  UPDATE_NOTE: {
+    requests: 60,
+    window: '1m' as const, // 60 requests per minute (for auto-saving)
+  },
   FETCH_NOTE: {
     requests: 30,
     window: '1m' as const, // 30 requests per minute
+  },
+  CHECK_CODE: {
+    requests: 60,
+    window: '1m' as const, // 60 custom-code checks per minute
   },
 } as const;
 

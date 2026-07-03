@@ -5,6 +5,12 @@
 import { z } from 'zod';
 import { NOTE, PASSWORD, SHORT_CODE } from './constants';
 
+const clientIdSchema = z
+  .string()
+  .min(1, 'Client id is required')
+  .max(100, 'Client id cannot exceed 100 characters')
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Client id can only contain letters, numbers, hyphens, and underscores');
+
 /**
  * Schema for creating a new note
  */
@@ -30,6 +36,8 @@ export const createNoteSchema = z.object({
     .max(SHORT_CODE.CUSTOM_MAX_LENGTH, `Custom code cannot exceed ${SHORT_CODE.CUSTOM_MAX_LENGTH} characters`)
     .regex(/^[a-zA-Z0-9_-]+$/, 'Custom code can only contain letters, numbers, hyphens, and underscores')
     .optional(),
+
+  clientId: clientIdSchema.optional(),
 });
 
 /**
@@ -80,6 +88,15 @@ export const updateNoteSchema = z.object({
     .optional(),
 
   removePassword: z.boolean().optional(),
+
+  newCode: z
+    .string()
+    .min(SHORT_CODE.MIN_LENGTH, `Custom code must be at least ${SHORT_CODE.MIN_LENGTH} characters`)
+    .max(SHORT_CODE.CUSTOM_MAX_LENGTH, `Custom code cannot exceed ${SHORT_CODE.CUSTOM_MAX_LENGTH} characters`)
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Custom code can only contain letters, numbers, hyphens, and underscores')
+    .optional(),
+
+  clientId: clientIdSchema.optional(),
 });
 
 /**
