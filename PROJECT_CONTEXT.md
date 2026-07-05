@@ -48,6 +48,8 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Firebase.
 - `short_code`
 - `content`
 - `password_hash`
+- `created_by_visitor_id`
+- `created_by_tab_id`
 - `created_at`
 - `updated_at`
 
@@ -55,6 +57,8 @@ Kloud Notes is a cloud notepad app built with Next.js, TypeScript, and Firebase.
 
 - `updated_at`
 - `updated_by`
+- `updated_by_visitor_id`
+- `updated_by_tab_id`
 
 The Firebase Security Rules enforce strict access, but all API routes bypass it using the Firebase Admin SDK to securely mediate access.
 
@@ -66,7 +70,16 @@ The Firebase Security Rules enforce strict access, but all API routes bypass it 
 4. If the user closes the tab without typing, the ghost draft is safely discarded.
 5. If the user enters content, the 1.5-second auto-save fires a `POST` request to create the note at that URL. The client seamlessly upgrades to `edit` mode (attaching realtime listeners) without a page reload.
 6. The user can optionally edit the URL via a dedicated UI or set a password.
-7. If password protected, anyone visiting the link must unlock it before reading. Active viewers subscribe to a Firestore snapshot listener (`kloudNoteSignals/{code}`). Save requests include a browser-scoped `clientId`, and signal docs store it as `updated_by` so clients can ignore their own saves and immediately alert on edits from another device or tab.
+7. If password protected, anyone visiting the link must unlock it before reading. Active viewers subscribe to a Firestore snapshot listener (`kloudNoteSignals/{code}`). Save requests include a browser-scoped `clientId`, persistent anonymous `visitorId`, and tab-scoped `tabId`; signal docs store these values so clients can classify saves as same tab, same browser in another tab, or another browser/device.
+
+## Analytics
+
+- Analytics is optional and enabled only when `NEXT_PUBLIC_GA_MEASUREMENT_ID` is configured.
+- `src/lib/analytics.ts` owns Google Analytics loading constants, browser identity helpers, safe event names, and GA dispatch wrappers.
+- `src/app/api/notes/[code]/relation/route.ts` classifies the current anonymous browser as creator, other browser/device, or unknown without exposing creator IDs to the client.
+- Note creation stores anonymous creator browser metadata (`created_by_visitor_id`, `created_by_tab_id`) so analytics can classify future views as creator browser, other browser/device, or unknown for legacy notes through the relation API. Raw creator IDs are not included in public note payloads.
+- Google Analytics tracks readable product events such as note views, creator/other-device view classifications, creates, edits, copy-link shares, password outcomes, custom-link checks, remote-update classifications, theme changes, and rate-limit failures.
+- Analytics includes short codes for per-note reporting but must never include note content, passwords, password hashes, raw creator IDs, or raw request/response bodies.
 
 ## Working Conventions
 
@@ -83,6 +96,7 @@ The Firebase Security Rules enforce strict access, but all API routes bypass it 
 - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
 - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `NEXT_PUBLIC_GA_MEASUREMENT_ID`
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`

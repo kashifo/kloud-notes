@@ -5,6 +5,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { trackEvent } from '@/lib/analytics';
 
 type Theme = 'light' | 'dark';
 
@@ -57,6 +58,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Save to localStorage to persist user's explicit choice
     localStorage.setItem('theme', newTheme);
     applyTheme(newTheme);
+    trackEvent(newTheme === 'light' ? 'theme_changed_to_light' : 'theme_changed_to_dark', {
+      theme: newTheme,
+    });
   };
 
   return (

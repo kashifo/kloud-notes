@@ -11,6 +11,14 @@ import { PasswordDialog } from '@/components/PasswordDialog';
 import { SuccessDialog } from '@/components/SuccessDialog';
 import { formatDate } from '@/lib/utils';
 import { APP_URL } from '@/lib/constants';
+import {
+  ActorRelation,
+  getContentLengthBucket,
+  getOrCreateTabId,
+  getOrCreateVisitorId,
+  trackEvent,
+  trackPageView,
+} from '@/lib/analytics';
 import { FilePlus, Lock, Unlock, Check, Clock, Edit2, Copy, X } from 'lucide-react';
 import type { PublicNote, ErrorResponse, VerifyPasswordResponse, CreateNoteResponse } from '@/types/note';
 
@@ -27,6 +35,9 @@ interface RecentNote {
   preview: string;
   updatedAt: number;
 }
+
+type PasswordSaveEvent = 'password_added_to_note' | 'password_removed_from_note' | 'password_changed';
+type ViewerRelation = 'creator_browser' | 'other_browser_or_device' | 'unknown';
 
 export function NoteEditorClient({ mode: initialMode, code: initialCode, initialNote }: NoteEditorClientProps) {
   const [mode, setMode] = useState<NoteEditorMode>(initialMode);
@@ -62,6 +73,8 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
   const [removedPasswordFlag, setRemovedPasswordFlag] = useState(false);
   const [hasPassword, setHasPassword] = useState(initialNote?.has_password || false);
   const [passwordChangeTrigger, setPasswordChangeTrigger] = useState(0);
+  const pendingPasswordEvent = useRef<PasswordSaveEvent | null>(null);
+  const passwordPromptTracked = useRef(false);
 
   // Auto-save state
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -76,7 +89,17 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
   const recentsRef = useRef<HTMLDivElement>(null);
 
   const appUrl = typeof window !== 'undefined' ? window.location.origin : APP_URL;
-  const clientId = useRef(`client_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  const visitorId = useRef(getOrCreateVisitorId());
+  const tabId = useRef(getOrCreateTabId());
+  const clientId = useRef(`client_${visitorId.current}_${tabId.current}`);
+  const trackedPageViews = useRef(new Set<string>());
+  const trackedViewKeys = useRef(new Set<string>());
+
+  const analyticsBaseParams = useCallback((targetCode = code) => ({
+    short_code: targetCode,
+    has_password: hasPassword || !!password,
+    content_length_bucket: content.trim() ? getContentLengthBucket(content.trim().length) : undefined,
+  }), [code, content, hasPassword, password]);
 
   // Handle clicking outside the recents popup
   useEffect(() => {
@@ -92,6 +115,95 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showRecents]);
+
+  const trackViewOnce = useCallback((
+    key: string,
+    eventName: 'ghost_note_viewed' | 'existing_note_viewed' | 'locked_note_viewed' | 'unlocked_note_viewed',
+    targetCode = code
+  ) => {
+    if (!targetCode || trackedViewKeys.current.has(key)) return;
+
+    trackedViewKeys.current.add(key);
+    trackEvent(eventName, analyticsBaseParams(targetCode));
+  }, [analyticsBaseParams, code]);
+
+  const trackViewerRelationOnce = useCallback(async (targetCode: string | undefined, noteState: string) => {
+    if (!targetCode || trackedViewKeys.current.has(`viewer:${targetCode}`)) return;
+
+    trackedViewKeys.current.add(`viewer:${targetCode}`);
+
+    let relation: ViewerRelation = 'unknown';
+
+    try {
+      const response = await fetch(`/api/notes/${targetCode}/relation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorId: visitorId.current }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (
+          data?.relation === 'creator_browser'
+          || data?.relation === 'other_browser_or_device'
+          || data?.relation === 'unknown'
+        ) {
+          relation = data.relation;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to classify note viewer relation:', err);
+    }
+
+    if (relation === 'creator_browser') {
+      trackEvent('note_viewed_by_creator_browser', {
+        ...analyticsBaseParams(targetCode),
+        note_state: noteState,
+      });
+      return;
+    }
+
+    if (relation === 'other_browser_or_device') {
+      trackEvent('note_viewed_by_other_browser_or_device', {
+        ...analyticsBaseParams(targetCode),
+        note_state: noteState,
+      });
+      return;
+    }
+
+    trackEvent('note_viewed_by_unknown_browser', {
+      ...analyticsBaseParams(targetCode),
+      note_state: noteState,
+    });
+  }, [analyticsBaseParams]);
+
+  useEffect(() => {
+    if (!code) return;
+
+    if (!trackedPageViews.current.has(code)) {
+      trackedPageViews.current.add(code);
+      trackPageView(`/${code}`, 'Kloud Notes');
+    }
+
+    if (mode === 'create') {
+      trackViewOnce(`ghost:${code}`, 'ghost_note_viewed', code);
+      return;
+    }
+
+    if (initialNote?.has_password && !initialNote.content) {
+      if (content) {
+        trackViewOnce(`unlocked:${code}`, 'unlocked_note_viewed', code);
+        trackViewerRelationOnce(code, 'unlocked');
+      } else {
+        trackViewOnce(`locked:${code}`, 'locked_note_viewed', code);
+        trackViewerRelationOnce(code, 'locked');
+      }
+      return;
+    }
+
+    trackViewOnce(`existing:${code}`, 'existing_note_viewed', code);
+    trackViewerRelationOnce(code, 'existing');
+  }, [code, content, initialNote, mode, trackViewOnce, trackViewerRelationOnce]);
 
   // Load Recent Notes on mount
   useEffect(() => {
@@ -121,12 +233,65 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     });
   }, []);
 
+  const classifySignalUpdate = useCallback((data: Record<string, unknown>): ActorRelation => {
+    const updatedByTabId = typeof data.updated_by_tab_id === 'string' ? data.updated_by_tab_id : null;
+    const updatedByVisitorId = typeof data.updated_by_visitor_id === 'string' ? data.updated_by_visitor_id : null;
+    const updatedByClientId = typeof data.updated_by === 'string' ? data.updated_by : null;
+
+    if (updatedByTabId && updatedByTabId === tabId.current) {
+      return 'same_tab';
+    }
+
+    if (updatedByVisitorId && updatedByVisitorId === visitorId.current) {
+      return 'same_browser_other_tab';
+    }
+
+    if (updatedByVisitorId) {
+      return 'other_browser_or_device';
+    }
+
+    if (updatedByClientId && updatedByClientId === clientId.current) {
+      return 'same_tab';
+    }
+
+    return 'unknown';
+  }, []);
+
+  const trackSignalUpdate = useCallback((actorRelation: ActorRelation, targetCode: string) => {
+    const params = {
+      short_code: targetCode,
+      has_password: hasPassword || !!password,
+      actor_relation: actorRelation,
+    };
+
+    if (actorRelation === 'same_tab') {
+      return;
+    }
+
+    if (actorRelation === 'same_browser_other_tab') {
+      trackEvent('note_updated_in_same_browser_other_tab', params);
+      return;
+    }
+
+    if (actorRelation === 'unknown') {
+      trackEvent('note_updated_by_unknown_browser', params);
+      return;
+    }
+
+    trackEvent('note_updated_in_other_browser_or_device', params);
+  }, [hasPassword, password]);
+
   // Edit mode: Show verify password dialog if note is protected and has no content initially
   useEffect(() => {
     if (mode === 'edit' && initialNote?.has_password && !initialNote.content) {
       setPasswordDialogMode('verify');
       setShowPasswordDialog(true);
+      if (!passwordPromptTracked.current) {
+        passwordPromptTracked.current = true;
+        trackEvent('password_prompt_shown', analyticsBaseParams());
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, initialNote]);
 
   // Edit mode: Realtime updates via Firestore
@@ -136,27 +301,32 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     let hasSeenDoc = false;
     let hasProcessedInitialSnapshot = false;
     let lastSignalKey: string | null = null;
-    const ownClientId = clientId.current;
     const localUpdatedAt = note?.updated_at ? new Date(note.updated_at).getTime() : 0;
 
     const unsubscribe = onSnapshot(doc(firestore, 'kloudNoteSignals', code), (docSnap) => {
       if (docSnap.exists()) {
         hasSeenDoc = true;
-        const data = docSnap.data();
+        const data = docSnap.data() as Record<string, unknown>;
         if (data.updated_at) {
-          const serverDate = typeof data.updated_at?.toDate === 'function'
-            ? data.updated_at.toDate()
-            : new Date(data.updated_at);
+          const updatedAt = data.updated_at as string | number | Date | { toDate?: () => Date };
+          const serverDate = typeof updatedAt === 'object'
+            && updatedAt !== null
+            && 'toDate' in updatedAt
+            && typeof updatedAt.toDate === 'function'
+            ? updatedAt.toDate()
+            : new Date(updatedAt as string | number | Date);
           const serverTime = serverDate.getTime();
-          const updatedBy = typeof data.updated_by === 'string' ? data.updated_by : null;
-          const signalKey = `${serverTime}:${updatedBy ?? ''}`;
-          const isOwnSave = updatedBy === ownClientId;
+          const updatedBy = typeof data.updated_by === 'string' ? data.updated_by : '';
+          const updatedByVisitorId = typeof data.updated_by_visitor_id === 'string' ? data.updated_by_visitor_id : '';
+          const updatedByTabId = typeof data.updated_by_tab_id === 'string' ? data.updated_by_tab_id : '';
+          const signalKey = `${serverTime}:${updatedBy}:${updatedByVisitorId}:${updatedByTabId}`;
+          const actorRelation = classifySignalUpdate(data);
 
           if (!hasProcessedInitialSnapshot) {
             hasProcessedInitialSnapshot = true;
             lastSignalKey = signalKey;
 
-            if (!isOwnSave && serverTime > localUpdatedAt + 1000) {
+            if (actorRelation !== 'same_tab' && serverTime > localUpdatedAt + 1000) {
               setHasServerChanges(true);
             }
             return;
@@ -165,7 +335,9 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
           if (signalKey === lastSignalKey) return;
           lastSignalKey = signalKey;
 
-          if (!isOwnSave) {
+          trackSignalUpdate(actorRelation, code);
+
+          if (actorRelation !== 'same_tab') {
             setHasServerChanges(true);
           }
         }
@@ -178,7 +350,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     });
 
     return () => unsubscribe();
-  }, [mode, code, note?.updated_at]);
+  }, [mode, code, note?.updated_at, classifySignalUpdate, trackSignalUpdate]);
 
   // Create mode: Check if custom code is available
   const checkCodeAvailability = useCallback(async (c: string) => {
@@ -191,14 +363,33 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     try {
       const response = await fetch(`/api/check/${c}`);
       const data = await response.json();
+      const eventParams = {
+        ...analyticsBaseParams(c),
+        short_code: c,
+        status_code: response.status,
+      };
+
+      if (response.status === 429) {
+        trackEvent('custom_link_check_rate_limited', eventParams);
+      } else if (response.status === 400) {
+        trackEvent('custom_link_invalid', eventParams);
+      } else if (!response.ok) {
+        trackEvent('custom_link_check_failed', eventParams);
+      } else if (data.available) {
+        trackEvent('custom_link_available', eventParams);
+      } else {
+        trackEvent('custom_link_taken', eventParams);
+      }
+
       setCodeAvailable(data.available);
     } catch (err) {
       console.error('Error checking code availability:', err);
+      trackEvent('custom_link_check_failed', analyticsBaseParams(c));
       setCodeAvailable(null);
     } finally {
       setIsCheckingCode(false);
     }
-  }, []);
+  }, [analyticsBaseParams]);
 
   const handleCustomCodeChange = (value: string) => {
     userModifiedCode.current = true;
@@ -226,6 +417,11 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     setCodeAvailable(null);
   };
 
+  const handleStartEditUrl = () => {
+    setIsEditingUrl(true);
+    trackEvent('custom_link_edit_started', analyticsBaseParams());
+  };
+
   const handlePasswordSubmit = async (pwd: string) => {
     if (passwordDialogMode === 'verify' && mode === 'edit' && code) {
       try {
@@ -247,11 +443,28 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
           setLastSavedContent(data.note.content); // Prevent immediate auto-save on unlock
           setShowPasswordDialog(false);
           setHasPassword(true);
+          trackEvent('password_unlock_succeeded', {
+            ...analyticsBaseParams(code),
+            status_code: response.status,
+          });
+          trackViewOnce(`unlocked:${code}`, 'unlocked_note_viewed', code);
         } else {
           setPasswordError('Incorrect password. Please try again.');
+          if (response.status === 429) {
+            trackEvent('password_unlock_rate_limited', {
+              ...analyticsBaseParams(code),
+              status_code: response.status,
+            });
+          } else {
+            trackEvent('password_unlock_failed', {
+              ...analyticsBaseParams(code),
+              status_code: response.status,
+            });
+          }
         }
       } catch (err) {
         setPasswordError(err instanceof Error ? err.message : 'Failed to verify password');
+        trackEvent('password_unlock_request_failed', analyticsBaseParams(code));
       } finally {
         setIsVerifying(false);
       }
@@ -259,8 +472,10 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
       // Setting new password (Create or Edit)
       if (mode === 'edit' && hasPassword && password) {
         setNewPassword(pwd);
+        pendingPasswordEvent.current = 'password_changed';
       } else {
         setPassword(pwd);
+        pendingPasswordEvent.current = 'password_added_to_note';
       }
       setHasPassword(true);
       setShowPasswordDialog(false);
@@ -284,7 +499,10 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     setShowPasswordDialog(false);
     
     if (mode === 'edit') {
+      pendingPasswordEvent.current = 'password_removed_from_note';
       setPasswordChangeTrigger(prev => prev + 1);
+    } else {
+      pendingPasswordEvent.current = null;
     }
   };
 
@@ -315,12 +533,25 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
             removePassword: removedPasswordFlag || undefined,
             newCode: (customCode && customCode !== code && !isAutoSave) ? customCode : undefined,
             clientId: clientId.current,
+            visitorId: visitorId.current,
+            tabId: tabId.current,
           }),
         });
 
         const data: PublicNote | ErrorResponse & { message?: string } = await response.json();
 
         if (!response.ok) {
+          if (response.status === 429) {
+            trackEvent(isAutoSave ? 'autosave_rate_limited' : 'manual_save_rate_limited', {
+              ...analyticsBaseParams(code),
+              status_code: response.status,
+            });
+          } else {
+            trackEvent('note_update_failed', {
+              ...analyticsBaseParams(code),
+              status_code: response.status,
+            });
+          }
           const errMsg = 'message' in data && data.message ? data.message : ('error' in data ? data.error : 'Failed to update note');
           throw new Error(errMsg);
         }
@@ -338,10 +569,26 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
             setNewPassword('');
           }
           setHasServerChanges(false);
+          trackEvent(isAutoSave ? 'note_edited_by_autosave' : 'note_edited_by_manual_save', {
+            ...analyticsBaseParams(code),
+            has_password: data.has_password,
+          });
+
+          if (pendingPasswordEvent.current) {
+            trackEvent(pendingPasswordEvent.current, {
+              ...analyticsBaseParams(code),
+              has_password: data.has_password,
+            });
+            pendingPasswordEvent.current = null;
+          }
           
           if (!isAutoSave) {
             // Handle redirect if renamed
             if (data.short_code && data.short_code !== code) {
+              trackEvent('note_renamed', {
+                ...analyticsBaseParams(data.short_code),
+                short_code: data.short_code,
+              });
               addToRecents(data.short_code, data.content);
               window.location.href = `/${data.short_code}`;
               return;
@@ -364,21 +611,52 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
             password: password || undefined,
             customCode: customCode || undefined,
             clientId: clientId.current,
+            visitorId: visitorId.current,
+            tabId: tabId.current,
           }),
         });
 
         const data: CreateNoteResponse | ErrorResponse & { message?: string } = await response.json();
 
         if (!response.ok) {
+          if (response.status === 429) {
+            trackEvent(isAutoSave ? 'autosave_rate_limited' : 'manual_save_rate_limited', {
+              ...analyticsBaseParams(customCode || code),
+              status_code: response.status,
+            });
+          } else {
+            trackEvent('note_create_failed', {
+              ...analyticsBaseParams(customCode || code),
+              status_code: response.status,
+            });
+          }
           const errMsg = 'message' in data && data.message ? data.message : ('error' in data ? data.error : 'Failed to create note');
           throw new Error(errMsg);
         }
 
         if ('url' in data) {
           addToRecents(data.shortCode, content);
+          trackEvent(isAutoSave ? 'note_created_by_autosave' : 'note_created_by_manual_save', {
+            ...analyticsBaseParams(data.shortCode),
+            short_code: data.shortCode,
+            has_password: !!password,
+            custom_code_used: !!customCode,
+          });
+          if (pendingPasswordEvent.current && password) {
+            trackEvent(pendingPasswordEvent.current, {
+              ...analyticsBaseParams(data.shortCode),
+              short_code: data.shortCode,
+              has_password: true,
+            });
+            pendingPasswordEvent.current = null;
+          }
           if (isAutoSave) {
             // Seamlessly upgrade client to edit mode without reloading!
             window.history.replaceState(null, '', `/${data.shortCode}`);
+            if (data.shortCode !== code && !trackedPageViews.current.has(data.shortCode)) {
+              trackedPageViews.current.add(data.shortCode);
+              trackPageView(`/${data.shortCode}`, 'Kloud Notes');
+            }
             setCode(data.shortCode);
             setCustomCode('');
             setMode('edit');
@@ -444,6 +722,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
+      trackEvent('note_link_copied', analyticsBaseParams(targetCode));
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
@@ -453,10 +732,26 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
   const handlePasswordToggle = () => {
     if (mode === 'edit' && hasPassword && !password) {
       setPasswordDialogMode('verify');
+      trackEvent('password_prompt_shown', analyticsBaseParams());
     } else {
       setPasswordDialogMode('set');
     }
     setShowPasswordDialog(true);
+  };
+
+  const handleNewNote = () => {
+    trackEvent('new_note_started', analyticsBaseParams());
+    window.location.href = '/';
+  };
+
+  const handleRemoteReload = () => {
+    trackEvent('note_remote_update_reload_clicked', analyticsBaseParams());
+    window.location.reload();
+  };
+
+  const handleRecentNoteOpen = (recentCode: string) => {
+    trackEvent('recent_note_opened', analyticsBaseParams(recentCode));
+    setShowRecents(false);
   };
 
   const charCount = content.length;
@@ -476,7 +771,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
             <div className="flex items-center gap-2 relative">
               {mode === 'edit' && (
                 <button
-                  onClick={() => window.location.href = '/'}
+                  onClick={handleNewNote}
                   className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
                 >
                   <FilePlus className="w-4 h-4" /> New Note
@@ -501,7 +796,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
                             key={rn.code}
                             href={`/${rn.code}`}
                             className="block p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition border-b border-gray-100 dark:border-gray-700 last:border-0"
-                            onClick={() => setShowRecents(false)}
+                            onClick={() => handleRecentNoteOpen(rn.code)}
                           >
                             <div className="text-xs font-mono text-blue-600 dark:text-blue-400 mb-1">{rn.code}</div>
                             <div className="text-sm text-gray-600 dark:text-gray-300 truncate">{rn.preview || 'Empty note'}</div>
@@ -549,7 +844,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
                 This note has been updated remotely by someone else.
               </span>
               <button 
-                onClick={() => window.location.reload()}
+                onClick={handleRemoteReload}
                 className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
               >
                 Reload to view changes
@@ -569,7 +864,7 @@ export function NoteEditorClient({ mode: initialMode, code: initialCode, initial
                     <div className="flex items-center border-l border-gray-200 dark:border-gray-700">
                       <button
                         type="button"
-                        onClick={() => setIsEditingUrl(true)}
+                        onClick={handleStartEditUrl}
                         className="p-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 transition"
                         title="Edit custom link"
                       >

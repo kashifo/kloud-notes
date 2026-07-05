@@ -11,6 +11,12 @@ const clientIdSchema = z
   .max(100, 'Client id cannot exceed 100 characters')
   .regex(/^[a-zA-Z0-9_-]+$/, 'Client id can only contain letters, numbers, hyphens, and underscores');
 
+const analyticsIdSchema = z
+  .string()
+  .min(1, 'Analytics id is required')
+  .max(100, 'Analytics id cannot exceed 100 characters')
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Analytics id can only contain letters, numbers, hyphens, and underscores');
+
 /**
  * Schema for creating a new note
  */
@@ -38,6 +44,8 @@ export const createNoteSchema = z.object({
     .optional(),
 
   clientId: clientIdSchema.optional(),
+  visitorId: analyticsIdSchema.optional(),
+  tabId: analyticsIdSchema.optional(),
 });
 
 /**
@@ -97,6 +105,8 @@ export const updateNoteSchema = z.object({
     .optional(),
 
   clientId: clientIdSchema.optional(),
+  visitorId: analyticsIdSchema.optional(),
+  tabId: analyticsIdSchema.optional(),
 });
 
 /**

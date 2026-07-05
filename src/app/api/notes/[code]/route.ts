@@ -140,7 +140,7 @@ export async function PATCH(
       );
     }
 
-    const { content, password, newPassword, removePassword, newCode, clientId } = validation.data;
+    const { content, password, newPassword, removePassword, newCode, clientId, visitorId, tabId } = validation.data;
 
     const db = getAdminDb();
     const noteRef = db.collection('kloudNotes').doc(code);
@@ -201,6 +201,8 @@ export async function PATCH(
           transaction.set(newSignalRef, {
             updated_at: FieldValue.serverTimestamp(),
             updated_by: clientId ?? null,
+            updated_by_visitor_id: visitorId ?? null,
+            updated_by_tab_id: tabId ?? null,
           }, { merge: true });
 
           // Delete old documents
@@ -219,6 +221,8 @@ export async function PATCH(
           transaction.set(signalRef, {
             updated_at: FieldValue.serverTimestamp(),
             updated_by: clientId ?? null,
+            updated_by_visitor_id: visitorId ?? null,
+            updated_by_tab_id: tabId ?? null,
           }, { merge: true });
 
           updatedNote = {

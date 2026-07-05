@@ -57,6 +57,8 @@ export interface RawNoteData {
   short_code: string;
   content: string;
   password_hash?: string | null;
+  created_by_visitor_id?: string | null;
+  created_by_tab_id?: string | null;
   created_at?: { toDate: () => Date } | string | Date;
   updated_at?: { toDate: () => Date } | string | Date;
   [key: string]: unknown;

@@ -12,6 +12,8 @@ export interface Note {
   password_hash: string | null;
   created_at: string;
   updated_at: string;
+  created_by_visitor_id?: string | null;
+  created_by_tab_id?: string | null;
 }
 
 /**
@@ -33,6 +35,9 @@ export interface CreateNoteRequest {
   content: string;
   password?: string;
   customCode?: string;
+  clientId?: string;
+  visitorId?: string;
+  tabId?: string;
 }
 
 /**

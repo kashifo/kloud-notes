@@ -51,7 +51,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
       );
     }
 
-    const { content, password, customCode, clientId } = validation.data;
+    const { content, password, customCode, clientId, visitorId, tabId } = validation.data;
 
     const db = getAdminDb();
     let finalShortCode = '';
@@ -75,6 +75,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
           short_code: finalShortCode,
           content,
           password_hash: passwordHash,
+          created_by_visitor_id: visitorId ?? null,
+          created_by_tab_id: tabId ?? null,
           created_at: FieldValue.serverTimestamp(),
           updated_at: FieldValue.serverTimestamp(),
         });
@@ -82,6 +84,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
         transaction.set(signalRef, {
           updated_at: FieldValue.serverTimestamp(),
           updated_by: clientId ?? null,
+          updated_by_visitor_id: visitorId ?? null,
+          updated_by_tab_id: tabId ?? null,
         });
 
         return true;
@@ -111,6 +115,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
             short_code: candidateCode,
             content,
             password_hash: passwordHash,
+            created_by_visitor_id: visitorId ?? null,
+            created_by_tab_id: tabId ?? null,
             created_at: FieldValue.serverTimestamp(),
             updated_at: FieldValue.serverTimestamp(),
           });
@@ -118,6 +124,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateNot
           transaction.set(signalRef, {
             updated_at: FieldValue.serverTimestamp(),
             updated_by: clientId ?? null,
+            updated_by_visitor_id: visitorId ?? null,
+            updated_by_tab_id: tabId ?? null,
           });
 
           return true;

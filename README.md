@@ -10,6 +10,7 @@ A secure, cloud-based notepad web application built with Next.js, TypeScript, an
 - **Custom Short Codes** - Create custom memorable URLs for your notes
 - **Secure by Default** - Security rules enabled in Firestore
 - **Rate Limited** - Built-in protection against abuse
+- **Analytics Ready** - Optional GA4 tracking
 - **Mobile Friendly** - Responsive design works on all devices
 - **Production Ready** - Optimized for deployment on Vercel
 
@@ -76,6 +77,9 @@ FIREBASE_PRIVATE_KEY=
 
 # Application URL
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Optional: Google Analytics 4
+NEXT_PUBLIC_GA_MEASUREMENT_ID=
 
 # Optional: Upstash Redis (for production rate limiting)
 UPSTASH_REDIS_REST_URL=
@@ -193,6 +197,7 @@ git push origin main
 3. Add environment variables:
    - All Firebase Client and Admin variables
    - `NEXT_PUBLIC_APP_URL` (set to your Vercel URL)
+   - Optional: `NEXT_PUBLIC_GA_MEASUREMENT_ID` (for Google Analytics 4)
    - Optional: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
 
 4. Deploy!
@@ -216,6 +221,14 @@ export const RATE_LIMIT = {
   VERIFY_PASSWORD: { requests: 10, window: '1m' },
   FETCH_NOTE: { requests: 30, window: '1m' },
 };
+```
+
+### Google Analytics
+
+Set `NEXT_PUBLIC_GA_MEASUREMENT_ID` to enable GA4 tracking. For the production Kloud Notes property, use:
+
+```env
+NEXT_PUBLIC_GA_MEASUREMENT_ID=G-54ETKKVKPV
 ```
 
 ### Note Size Limits
@@ -277,7 +290,6 @@ pnpm lint
 ## Future Enhancements
 
 - [ ] Note expiration (auto-delete after X days)
-- [ ] Note view analytics
 - [ ] Rich text editor
 - [ ] File attachments
 - [ ] Custom themes
